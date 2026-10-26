@@ -1,6 +1,7 @@
 package com.evfleet.systemzarzadzaniaflotaev.controller;
 
 import com.evfleet.systemzarzadzaniaflotaev.dto.VehicleDto;
+import com.evfleet.systemzarzadzaniaflotaev.model.VehicleStatus;
 import com.evfleet.systemzarzadzaniaflotaev.service.VehicleService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,18 @@ public class VehicleController {
         return vehicleService.getVehicleById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    // GET: Filtrowanie pojazdów po statusie (np. /api/vehicles/status/DOSTEPNY)
+    @GetMapping("/status/{status}")
+    public List<VehicleDto> getVehiclesByStatus(@PathVariable VehicleStatus status) {
+        return vehicleService.getVehiclesByStatus(status);
+    }
+
+    // GET: Pobieranie pojazdów z niskim stanem baterii (np. /api/vehicles/low-battery?threshold=20)
+    @GetMapping("/low-battery")
+    public List<VehicleDto> getLowBatteryVehicles(@RequestParam(defaultValue = "20") Integer threshold) {
+        return vehicleService.getLowBatteryVehicles(threshold);
     }
 
     @PostMapping

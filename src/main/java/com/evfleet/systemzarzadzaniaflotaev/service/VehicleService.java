@@ -2,6 +2,7 @@ package com.evfleet.systemzarzadzaniaflotaev.service;
 
 import com.evfleet.systemzarzadzaniaflotaev.dto.VehicleDto;
 import com.evfleet.systemzarzadzaniaflotaev.model.Vehicle;
+import com.evfleet.systemzarzadzaniaflotaev.model.VehicleStatus;
 import com.evfleet.systemzarzadzaniaflotaev.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,20 @@ public class VehicleService {
     // Usunięcie pojazdu
     public void deleteVehicle(Long id) {
         vehicleRepository.deleteById(id);
+    }
+
+    // Pobierz pojazdy filtrowane po statusie
+    public List<VehicleDto> getVehiclesByStatus(VehicleStatus status) {
+        return vehicleRepository.findByStatus(status).stream()
+                .map(this::convertToDto)
+                .collect(Collectors.toList());
+    }
+
+    // Pobierz pojazdy z niskim stanem baterii (poniżej zadanego progu)
+    public List<VehicleDto> getLowBatteryVehicles(Integer threshold) {
+        return vehicleRepository.findByStateOfChargeLessThan(threshold).stream()
+                .map(this::convertToDto)
+                .collect(Collectors.toList());
     }
 
     // --- Metody pomocnicze do mapowania ---
