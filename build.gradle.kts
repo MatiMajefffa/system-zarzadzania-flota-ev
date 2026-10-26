@@ -22,6 +22,7 @@ dependencies {
     // Podstawowe moduły Spring Boot
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-validation")
     // Baza danych i obsługa PostGIS
     runtimeOnly("org.postgresql:postgresql")
     implementation("org.hibernate.orm:hibernate-spatial")

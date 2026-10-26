@@ -2,6 +2,7 @@ package com.evfleet.systemzarzadzaniaflotaev.controller;
 
 import com.evfleet.systemzarzadzaniaflotaev.dto.VehicleDto;
 import com.evfleet.systemzarzadzaniaflotaev.service.VehicleService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -28,7 +29,7 @@ public class VehicleController {
     }
 
     @PostMapping
-    public ResponseEntity<VehicleDto> createVehicle(@RequestBody VehicleDto vehicleDto) {
+    public ResponseEntity<VehicleDto> createVehicle(@Valid @RequestBody VehicleDto vehicleDto) {
         VehicleDto savedVehicle = vehicleService.saveVehicle(vehicleDto);
         return ResponseEntity.ok(savedVehicle);
     }
