@@ -1,0 +1,14 @@
+### Pobierz listę wszystkich pojazdów
+GET http://localhost:8080/api/vehicles
+
+### Dodaj nowy pojazd do floty
+POST http://localhost:8080/api/vehicles
+Content-Type: application/json
+
+{
+  "registrationNumber": "WI12345",
+  "model": "Tesla Model 3",
+  "batteryCapacityKWh": 75.0,
+  "stateOfCharge": 90,
+  "status": "DOSTEPNY"
+}

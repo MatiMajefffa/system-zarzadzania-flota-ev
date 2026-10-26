@@ -1,7 +1,7 @@
 package com.evfleet.systemzarzadzaniaflotaev.controller;
 
-import com.evfleet.systemzarzadzaniaflotaev.model.Vehicle;
-import com.evfleet.systemzarzadzaniaflotaev.repository.VehicleRepository;
+import com.evfleet.systemzarzadzaniaflotaev.dto.VehicleDto;
+import com.evfleet.systemzarzadzaniaflotaev.service.VehicleService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,18 +13,32 @@ import java.util.List;
 @RequiredArgsConstructor
 public class VehicleController {
 
-    private final VehicleRepository vehicleRepository;
+    private final VehicleService vehicleService;
 
-    // Pobieranie listy wszystkich pojazdów we flocie (GET /api/vehicles)
     @GetMapping
-    public List<Vehicle> getAllVehicles() {
-        return vehicleRepository.findAll();
+    public List<VehicleDto> getAllVehicles() {
+        return vehicleService.getAllVehicles();
     }
 
-    // Dodawanie nowego pojazdu do floty (POST /api/vehicles)
+    @GetMapping("/{id}")
+    public ResponseEntity<VehicleDto> getVehicleById(@PathVariable Long id) {
+        return vehicleService.getVehicleById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
     @PostMapping
-    public ResponseEntity<Vehicle> createVehicle(@RequestBody Vehicle vehicle) {
-        Vehicle savedVehicle = vehicleRepository.save(vehicle);
+    public ResponseEntity<VehicleDto> createVehicle(@RequestBody VehicleDto vehicleDto) {
+        VehicleDto savedVehicle = vehicleService.saveVehicle(vehicleDto);
         return ResponseEntity.ok(savedVehicle);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteVehicle(@PathVariable Long id) {
+        if (vehicleService.getVehicleById(id).isPresent()) {
+            vehicleService.deleteVehicle(id);
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.notFound().build();
     }
 }
