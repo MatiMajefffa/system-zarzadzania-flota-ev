@@ -1,0 +1,56 @@
+### ==========================================
+### TESTY MODUŁU POJAZDÓW (VEHICLES)
+### ==========================================
+
+### 1. Pobierz listę wszystkich pojazdów (GET)
+GET http://localhost:8080/api/vehicles
+Accept: application/json
+
+### ==========================================
+
+### 2. SCENARIUSZ SUKCES: Dodaj poprawny pojazd (POST)
+# Oczekiwany wynik: Status 200 OK oraz zwrócenie obiektu z nadanym ID
+POST http://localhost:8080/api/vehicles
+Content-Type: application/json
+
+{
+  "registrationNumber": "PO1234A",
+  "model": "Kia EV6",
+  "batteryCapacityKWh": 77.4,
+  "stateOfCharge": 80,
+  "status": "DOSTEPNY"
+}
+
+### ==========================================
+
+### 3. SCENARIUSZ BŁĘDU (WALIDACJA): Wysłanie błędnych danych (POST)
+# Oczekiwany wynik: Status 400 Bad Request oraz JSON z listą błędów walidacji
+POST http://localhost:8080/api/vehicles
+Content-Type: application/json
+
+{
+  "registrationNumber": "",
+  "model": "",
+  "batteryCapacityKWh": -15.0,
+  "stateOfCharge": 150,
+  "status": null
+}
+
+### ==========================================
+
+### 4. Pobierz konkretny pojazd po ID (GET)
+# (Wpisz odpowiednie ID, np. 1 lub 2, w zależności co masz w bazie)
+GET http://localhost:8080/api/vehicles/1
+Accept: application/json
+
+### ==========================================
+
+### 5. Usuń pojazd po ID (DELETE)
+# (Wpisz ID pojazdu, który chcesz usunąć)
+DELETE http://localhost:8080/api/vehicles/3
+
+### Pobierz tylko pojazdy dostępne
+GET http://localhost:8080/api/vehicles/status/DOSTEPNY
+
+### Pobierz pojazdy z niskim stanem baterii (domyślnie poniżej 20% lub z parametrem)
+GET http://localhost:8080/api/vehicles/low-battery?threshold=30
