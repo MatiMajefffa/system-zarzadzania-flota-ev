@@ -18,7 +18,7 @@ public class RoutePlanningService {
     private final VehicleRepository vehicleRepository;
     private final ChargingStationRepository stationRepository;
 
-    public RoutePlanResult planSmartRoute(Long vehicleId, double startLon, double startLat, double endLon, double endLat, double temperature) {
+    public RoutePlanResult planRoute(Long vehicleId, double startLon, double startLat, double endLon, double endLat, double temperature) {
 
         // 1. Pobierz pojazd i sprawdź baterię oraz zasięg z uwzględnieniem pogody
         Vehicle vehicle = vehicleRepository.findById(vehicleId)

@@ -70,6 +70,14 @@ Content-Type: application/json
 
 [
   {
+    "name": "Testowa Stacja Zabrze DTŚ",
+    "operator": "GreenWay",
+    "latitude": 50.3090,
+    "longitude": 18.7844,
+    "powerKw": 100.0,
+    "available": true
+  },
+  {
     "name": "Stacja Testowa Centrum Warszawa",
     "powerKW": 150.0,
     "isAvailable": true,
@@ -84,6 +92,7 @@ Content-Type: application/json
     "longitude": 21.0100
   }
 ]
+
 
 ### 2.3. Automatyczne pobieranie stacji z internetu przez RestClient (Open Charge Map)
 POST http://localhost:8080/api/stations/fetch-external

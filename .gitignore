@@ -35,3 +35,8 @@ out/
 
 ### VS Code ###
 .vscode/
+
+# OSRM Map Files
+*.osm.pbf
+*.osrm
+*.osrm.*
