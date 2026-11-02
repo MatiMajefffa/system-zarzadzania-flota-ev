@@ -1,0 +1,17 @@
+### 1. Rejestracja nowego pracownika (Kierowcy)
+POST http://localhost:8080/api/auth/register
+Content-Type: application/json
+
+{
+  "role": "DRIVER"
+}
+
+### 2. Logowanie na nowo utworzone konto
+# UWAGA: Podmień "1000" na ID, które zwróci Ci zapytanie wyżej, jeśli baza wygenerowała inny numer.
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+  "employeeId": 1000,
+  "password": "1000"
+}
