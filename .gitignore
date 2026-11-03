@@ -40,3 +40,9 @@ out/
 *.osm.pbf
 *.osrm
 *.osrm.*
+
+# Frontend
+frontend-fleet/node_modules/
+frontend-fleet/dist/
+frontend-fleet/.vscode/
+frontend-fleet/.env.local
