@@ -1,17 +1,18 @@
 package com.evfleet.systemzarzadzaniaflotaev.service;
 
-import com.evfleet.systemzarzadzaniaflotaev.dto.ExternalStationDto;
-import com.evfleet.systemzarzadzaniaflotaev.dto.OcmStationResponse;
 import com.evfleet.systemzarzadzaniaflotaev.model.ChargingStation;
 import com.evfleet.systemzarzadzaniaflotaev.repository.ChargingStationRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClient;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -19,78 +20,77 @@ import java.util.List;
 public class ChargingStationSyncService {
 
     private final ChargingStationRepository stationRepository;
-
-    // Nowoczesny klient HTTP ze Spring Boot 3 do pobierania danych z Internetu
-    private final RestClient restClient = RestClient.create();
-
+    private final RestTemplate restTemplate = new RestTemplate();
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
 
-    /**
-     * 1. Automatyczne pobieranie stacji z zewnętrznego API (Open Charge Map) przez RestClient
-     */
+    @Transactional
     public int fetchAndSaveExternalStations() {
-        String url = "https://api.openchargemap.io/v3/poi/?countrycode=PL&maxresults=20&compact=true";
+        // Twój klucz API
+        String apiKey = "5a58f828-26d5-4504-80f4-410d2ea61f34";
+
+        String url = "https://api.openchargemap.io/v3/poi/?" +
+                "output=json" +
+                "&countrycode=PL" +
+                "&latitude=50.2649" +
+                "&longitude=19.0238" +
+                "&distance=70" +
+                "&distanceunit=KM" +
+                "&maxresults=250" +
+                "&compact=true" +
+                "&verbose=false" +
+                "&key=" + apiKey;
 
         try {
-            OcmStationResponse[] externalStations = restClient.get()
-                    .uri(url)
-                    .header("User-Agent", "EV-Fleet-Management-System")
-                    .retrieve()
-                    .body(OcmStationResponse[].class);
-
-            if (externalStations == null) {
+            String jsonResponse = restTemplate.getForObject(url, String.class);
+            if (jsonResponse == null || jsonResponse.trim().isEmpty()) {
                 return 0;
             }
 
-            int savedCount = 0;
-            for (OcmStationResponse ocmDto : externalStations) {
-                if (ocmDto.getAddressInfo() != null &&
-                        ocmDto.getAddressInfo().getLatitude() != null &&
-                        ocmDto.getAddressInfo().getLongitude() != null) {
-
-                    ChargingStation station = new ChargingStation();
-                    station.setName(ocmDto.getAddressInfo().getTitle() != null ? ocmDto.getAddressInfo().getTitle() : "Stacja zewnętrzna");
-                    station.setPowerKW(50.0); // Domyślna moc
-                    station.setIsAvailable(true);
-
-                    // Konwersja współrzędnych na punkt PostGIS (X = Longitude, Y = Latitude)
-                    Point point = geometryFactory.createPoint(
-                            new Coordinate(ocmDto.getAddressInfo().getLongitude(), ocmDto.getAddressInfo().getLatitude())
-                    );
-                    station.setLocation(point);
-
-                    stationRepository.save(station);
-                    savedCount++;
-                }
+            JsonNode rootArray = objectMapper.readTree(jsonResponse);
+            if (!rootArray.isArray()) {
+                return 0;
             }
-            return savedCount;
+
+            List<ChargingStation> stationsToSave = new ArrayList<>();
+
+            for (JsonNode item : rootArray) {
+                JsonNode addressInfo = item.path("AddressInfo");
+                if (addressInfo.isMissingNode() || addressInfo.isNull()) continue;
+
+                double lat = addressInfo.path("Latitude").asDouble(0.0);
+                double lng = addressInfo.path("Longitude").asDouble(0.0);
+                if (lat == 0.0 || lng == 0.0) continue;
+
+                String name = addressInfo.path("Title").asText("Stacja Ładowania EV");
+
+                double powerKw = 22.0;
+                JsonNode connections = item.path("Connections");
+                if (connections.isArray() && connections.size() > 0) {
+                    double kw = connections.get(0).path("PowerKW").asDouble(0.0);
+                    if (kw > 0) {
+                        powerKw = kw;
+                    }
+                }
+
+                ChargingStation station = new ChargingStation();
+                station.setName(name);
+                station.setPowerKW(powerKw);
+                station.setIsAvailable(true);
+
+                // Geometria PostGIS (SRID 4326: X=Longitude, Y=Latitude)
+                station.setLocation(geometryFactory.createPoint(new Coordinate(lng, lat)));
+
+                stationsToSave.add(station);
+            }
+
+            stationRepository.deleteAll();
+            List<ChargingStation> saved = stationRepository.saveAll(stationsToSave);
+            return saved.size();
 
         } catch (Exception e) {
-            throw new RuntimeException("Błąd podczas pobierania stacji z zewnętrznego API: " + e.getMessage(), e);
+            e.printStackTrace();
+            throw new RuntimeException("Błąd podczas synchronizacji stacji z OCM: " + e.getMessage(), e);
         }
-    }
-
-    /**
-     * 2. Ręczna synchronizacja / import przesłanej listy stacji (obsługuje endpoint /api/stations/sync)
-     */
-    public int syncStations(List<ExternalStationDto> externalStations) {
-        int savedCount = 0;
-        for (ExternalStationDto extDto : externalStations) {
-            if (extDto.getLongitude() != null && extDto.getLatitude() != null) {
-                ChargingStation station = new ChargingStation();
-                station.setName(extDto.getName() != null ? extDto.getName() : "Stacja importowana");
-                station.setPowerKW(extDto.getPowerKW() != null ? extDto.getPowerKW() : 50.0);
-                station.setIsAvailable(extDto.getIsAvailable() != null ? extDto.getIsAvailable() : true);
-
-                Point point = geometryFactory.createPoint(
-                        new Coordinate(extDto.getLongitude(), extDto.getLatitude())
-                );
-                station.setLocation(point);
-
-                stationRepository.save(station);
-                savedCount++;
-            }
-        }
-        return savedCount;
     }
 }

@@ -3,8 +3,8 @@ package com.evfleet.systemzarzadzaniaflotaev.controller;
 import com.evfleet.systemzarzadzaniaflotaev.dto.VehicleDto;
 import com.evfleet.systemzarzadzaniaflotaev.model.VehicleStatus;
 import com.evfleet.systemzarzadzaniaflotaev.service.VehicleService;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -13,58 +13,53 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/vehicles")
-@CrossOrigin(origins = "http://localhost:5173")
 @RequiredArgsConstructor
 public class VehicleController {
 
     private final VehicleService vehicleService;
 
-    // Przegląd całej floty - tylko dla Menedżera i wyżej
+    // Pobieranie wszystkich pojazdów
     @GetMapping
-    @PreAuthorize("hasRole('MANAGER')")
-    public List<VehicleDto> getAllVehicles() {
-        return vehicleService.getAllVehicles();
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'DRIVER')")
+    public ResponseEntity<List<VehicleDto>> getAllVehicles() {
+        return ResponseEntity.ok(vehicleService.getAllVehicles());
     }
 
-    // Szczegóły pojedynczego pojazdu - dostępne także dla Kierowcy
+    // Pobieranie pojazdu po ID
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('DRIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'DRIVER')")
     public ResponseEntity<VehicleDto> getVehicleById(@PathVariable Long id) {
         return vehicleService.getVehicleById(id)
                 .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    // Widok statystyk (po statusie) - tylko dla Menedżera
+    // Pobieranie pojazdów po statusie (np. /api/vehicles/status/AVAILABLE)
     @GetMapping("/status/{status}")
-    @PreAuthorize("hasRole('MANAGER')")
-    public List<VehicleDto> getVehiclesByStatus(@PathVariable VehicleStatus status) {
-        return vehicleService.getVehiclesByStatus(status);
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'DRIVER')")
+    public ResponseEntity<List<VehicleDto>> getVehiclesByStatus(@PathVariable VehicleStatus status) {
+        return ResponseEntity.ok(vehicleService.getVehiclesByStatus(status));
     }
 
-    // Widok statystyk (niska bateria) - tylko dla Menedżera
+    // Pobieranie pojazdów z niskim stanem baterii (np. /api/vehicles/low-battery?threshold=20)
     @GetMapping("/low-battery")
-    @PreAuthorize("hasRole('MANAGER')")
-    public List<VehicleDto> getLowBatteryVehicles(@RequestParam(defaultValue = "20") Integer threshold) {
-        return vehicleService.getLowBatteryVehicles(threshold);
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'DRIVER')")
+    public ResponseEntity<List<VehicleDto>> getLowBatteryVehicles(@RequestParam(defaultValue = "20") Integer threshold) {
+        return ResponseEntity.ok(vehicleService.getLowBatteryVehicles(threshold));
     }
 
-    // Dodawanie pojazdu - tylko dla Menedżera
+    // Dodawanie / Zapisywanie pojazdu
     @PostMapping
-    @PreAuthorize("hasRole('MANAGER')")
-    public ResponseEntity<VehicleDto> createVehicle(@Valid @RequestBody VehicleDto vehicleDto) {
-        VehicleDto savedVehicle = vehicleService.saveVehicle(vehicleDto);
-        return ResponseEntity.ok(savedVehicle);
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<VehicleDto> saveVehicle(@RequestBody VehicleDto dto) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(vehicleService.saveVehicle(dto));
     }
 
-    // Usuwanie pojazdu - tylko dla Menedżera
+    // Usunięcie pojazdu
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteVehicle(@PathVariable Long id) {
-        if (vehicleService.getVehicleById(id).isPresent()) {
-            vehicleService.deleteVehicle(id);
-            return ResponseEntity.noContent().build();
-        }
-        return ResponseEntity.notFound().build();
+        vehicleService.deleteVehicle(id);
+        return ResponseEntity.noContent().build();
     }
 }

@@ -38,11 +38,10 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // Włączenie konfiguracji CORS na poziomie filtrów Spring Security
+                // 1. Dodajemy obsługę CORS na poziomie filtrów Spring Security
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        // Dodajemy /error, aby widzieć prawdziwe komunikaty zamiast 403
                         .requestMatchers("/api/auth/**", "/error").permitAll()
                         .anyRequest().authenticated()
                 )
@@ -53,14 +52,12 @@ public class SecurityConfig {
         return http.build();
     }
 
+    // 2. Definiujemy reguły CORS dla aplikacji React (port 5173)
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Zezwalamy na połączenia z aplikacji Vite (React)
         configuration.setAllowedOrigins(List.of("http://localhost:5173"));
-        // Odblokowujemy zapytania preflight OPTIONS oraz standardowe metody HTTP
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        // Przesyłanie nagłówków (w tym tokena JWT w Authorization)
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Cache-Control"));
         configuration.setAllowCredentials(true);
 

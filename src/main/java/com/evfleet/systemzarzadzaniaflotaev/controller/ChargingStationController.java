@@ -1,47 +1,79 @@
 package com.evfleet.systemzarzadzaniaflotaev.controller;
 
 import com.evfleet.systemzarzadzaniaflotaev.dto.ChargingStationDto;
-import com.evfleet.systemzarzadzaniaflotaev.dto.ExternalStationDto;
 import com.evfleet.systemzarzadzaniaflotaev.service.ChargingStationService;
 import com.evfleet.systemzarzadzaniaflotaev.service.ChargingStationSyncService;
-import jakarta.validation.Valid;
+import com.evfleet.systemzarzadzaniaflotaev.service.GeocodingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
-@RequestMapping("/api/stations")
+@RequestMapping("/api/charging-stations")
 @RequiredArgsConstructor
 public class ChargingStationController {
 
     private final ChargingStationService stationService;
     private final ChargingStationSyncService syncService;
+    private final GeocodingService geocodingService;
 
     @GetMapping
-    public List<ChargingStationDto> getAllStations() {
-        return stationService.getAllStations();
-    }
-    // POST: Pobierz stacje z zewnętrznego API i zapisz w bazie PostGIS
-    @PostMapping("/fetch-external")
-    public ResponseEntity<String> fetchExternalStations() {
-        int savedCount = syncService.fetchAndSaveExternalStations();
-        return ResponseEntity.ok("Pomyślnie pobrano i zapisano w bazie PostGIS stacji: " + savedCount);
-    }
-    // Endpoint do symulacji/wywołania importu danych z zewnętrznego API
-    @PostMapping("/sync")
-    public ResponseEntity<String> syncExternalStations(@RequestBody List<ExternalStationDto> externalStations) {
-        int imported = syncService.syncStations(externalStations);
-        return ResponseEntity.ok("Pomyślnie zsynchronizowano i zapisano w PostGIS stacji: " + imported);
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'DRIVER')")
+    public ResponseEntity<List<ChargingStationDto>> getAllStations() {
+        return ResponseEntity.ok(stationService.getAllStations());
     }
 
-    // Wyszukiwanie przestrzenne PostGIS w promieniu X kilometrów
+    @PostMapping("/sync")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'DRIVER')")
+    public ResponseEntity<Integer> syncExternalStations() {
+        int savedCount = syncService.fetchAndSaveExternalStations();
+        return ResponseEntity.ok(savedCount);
+    }
+
     @GetMapping("/nearby")
-    public List<ChargingStationDto> getStationsNearby(
-            @RequestParam Double lat,
-            @RequestParam Double lon,
-            @RequestParam(defaultValue = "10.0") Double radius) {
-        return stationService.getStationsNearby(lat, lon, radius);
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'DRIVER')")
+    public ResponseEntity<List<ChargingStationDto>> getStationsNearby(
+            @RequestParam(name = "latitude", required = false) Double latitude,
+            @RequestParam(name = "longitude", required = false) Double longitude,
+            @RequestParam(name = "lat", required = false) Double lat,
+            @RequestParam(name = "lon", required = false) Double lon,
+            @RequestParam(name = "radiusKm", required = false, defaultValue = "10.0") Double radiusKm,
+            @RequestParam(name = "radius", required = false, defaultValue = "10.0") Double radius) {
+
+        Double finalLat = latitude != null ? latitude : lat;
+        Double finalLng = longitude != null ? longitude : lon;
+        Double finalRadius = radiusKm != null ? radiusKm : radius;
+
+        if (finalLat == null || finalLng == null) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        return ResponseEntity.ok(stationService.getStationsNearby(finalLat, finalLng, finalRadius));
+    }
+
+    @GetMapping("/search-by-address")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'DRIVER')")
+    public ResponseEntity<?> getStationsByAddress(
+            @RequestParam String address,
+            @RequestParam(defaultValue = "15.0") Double radiusKm) {
+
+        double[] coords = geocodingService.getCoordinatesForAddress(address);
+        if (coords == null) {
+            return ResponseEntity.badRequest().body("Nie znaleziono podanego adresu.");
+        }
+
+        List<ChargingStationDto> stations = stationService.getStationsNearby(coords[0], coords[1], radiusKm);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("latitude", coords[0]);
+        response.put("longitude", coords[1]);
+        response.put("stations", stations);
+
+        return ResponseEntity.ok(response);
     }
 }

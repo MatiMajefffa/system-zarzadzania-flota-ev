@@ -4,10 +4,6 @@ import com.evfleet.systemzarzadzaniaflotaev.dto.ChargingStationDto;
 import com.evfleet.systemzarzadzaniaflotaev.model.ChargingStation;
 import com.evfleet.systemzarzadzaniaflotaev.repository.ChargingStationRepository;
 import lombok.RequiredArgsConstructor;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.Point;
-import org.locationtech.jts.geom.PrecisionModel;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -19,7 +15,6 @@ import java.util.stream.Collectors;
 public class ChargingStationService {
 
     private final ChargingStationRepository stationRepository;
-    private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
 
     // Pobranie wszystkich stacji
     public List<ChargingStationDto> getAllStations() {
@@ -48,6 +43,7 @@ public class ChargingStationService {
         dto.setName(station.getName());
         dto.setPowerKW(station.getPowerKW());
         dto.setIsAvailable(station.getIsAvailable());
+
         if (station.getLocation() != null) {
             dto.setLongitude(station.getLocation().getX());
             dto.setLatitude(station.getLocation().getY());
