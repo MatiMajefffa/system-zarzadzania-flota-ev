@@ -2,14 +2,26 @@ import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import {
+    Box, Drawer, AppBar, Toolbar, Typography, Button, List,
+    ListItem, ListItemIcon, ListItemText, TextField, Paper, Alert
+} from '@mui/material';
+import MapIcon from '@mui/icons-material/Map';
+import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
+import RouteIcon from '@mui/icons-material/Route';
+import LogoutIcon from '@mui/icons-material/Logout';
+import SyncIcon from '@mui/icons-material/Sync';
+import SearchIcon from '@mui/icons-material/Search';
 
-// Domyślne ikony Leafleta
+// Naprawa domyślnych ikon Leafleta
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
     iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
+
+const drawerWidth = 240;
 
 // Pomocniczy komponent do płynnego przesuwania mapy
 function MapController({ center }) {
@@ -23,46 +35,74 @@ function MapController({ center }) {
 }
 
 export default function Dashboard() {
+    const [activeTab, setActiveTab] = useState('mapa');
     const [stations, setStations] = useState([]);
+    const [vehicles, setVehicles] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [message, setMessage] = useState('');
+    const [message, setMessage] = useState({ text: '', type: 'info' });
     const [radiusKm, setRadiusKm] = useState(15);
-    const [centerCoords, setCenterCoords] = useState({ lat: 50.2649, lng: 19.0238 }); // Katowice
+    const [centerCoords, setCenterCoords] = useState({ lat: 50.2649, lng: 19.0238 });
     const [searchAddress, setSearchAddress] = useState('Katowice');
+    const [isAuthenticated, setIsAuthenticated] = useState(true); // <--- NOWY STAN
 
     const token = localStorage.getItem('token');
 
-    // Obsługa wylogowania
+    // Mądre sprawdzanie tokena (bez infinite-loop przeładowań)
+    useEffect(() => {
+        if (!token || token === 'undefined' || token === 'null') {
+            setIsAuthenticated(false);
+        } else {
+            fetchStations();
+            fetchVehicles();
+        }
+    }, [token]);
+
     const handleLogout = () => {
         localStorage.removeItem('token');
-        window.location.href = '/login'; // Lub useNavigate() z react-router-dom
+        setIsAuthenticated(false);
     };
 
-    // Pobranie wszystkich stacji z bazy danych
+    // Jeśli nie ma tokena, zamiast odświeżać stronę, pokazujemy proste okno, które poprosi o kliknięcie w link
+    if (!isAuthenticated) {
+        return (
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mt: 10 }}>
+                <Typography variant="h5" color="error" gutterBottom>Sesja wygasła lub brak autoryzacji</Typography>
+                <Button variant="contained" href="/login">Przejdź do logowania</Button>
+            </Box>
+        );
+    }
+
+    const showMessage = (text, type = 'info') => setMessage({ text, type });
+
+    // API: Stacje
     const fetchStations = async () => {
         try {
-            const response = await fetch('/api/charging-stations', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await fetch('/api/charging-stations', { headers: { Authorization: `Bearer ${token}` } });
             if (response.ok) {
-                const data = await response.json();
-                setStations(data);
+                setStations(await response.json());
             } else if (response.status === 401 || response.status === 403) {
-                setMessage('Sesja wygasła. Zaloguj się ponownie.');
+                handleLogout();
             }
         } catch (err) {
-            console.error('Błąd pobierania stacji:', err);
+            console.error(err);
         }
     };
 
-    useEffect(() => {
-        fetchStations();
-    }, []);
+    // API: Pojazdy (korzysta z Twojego VehicleController)
+    const fetchVehicles = async () => {
+        try {
+            const response = await fetch('/api/vehicles', { headers: { Authorization: `Bearer ${token}` } });
+            if (response.ok) {
+                setVehicles(await response.json());
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
 
-    // Synchronizacja z OpenChargeMap
     const handleSync = async () => {
         setLoading(true);
-        setMessage('Pobieranie stacji z OpenChargeMap...');
+        showMessage('Pobieranie stacji z OpenChargeMap...', 'info');
         try {
             const response = await fetch('/api/charging-stations/sync', {
                 method: 'POST',
@@ -70,24 +110,22 @@ export default function Dashboard() {
             });
             if (response.ok) {
                 const count = await response.json();
-                setMessage(`Pomyślnie pobrano i zapisano w PostGIS stacji: ${count}`);
+                showMessage(`Zapisano w PostGIS stacji: ${count}`, 'success');
                 fetchStations();
             } else {
-                setMessage('Błąd autoryzacji lub synchronizacji stacji.');
+                showMessage('Błąd synchronizacji stacji.', 'error');
             }
         } catch (err) {
-            setMessage('Wystąpił błąd połączenia z serwerem.');
+            showMessage('Błąd połączenia z serwerem.', 'error');
         } finally {
             setLoading(false);
         }
     };
 
-    // Geokodowanie i wyszukiwanie przestrzenne
     const handleSearchByAddress = async () => {
         if (!searchAddress.trim()) return;
-
         setLoading(true);
-        setMessage(`Szukanie lokalizacji "${searchAddress}"...`);
+        showMessage(`Szukanie lokalizacji "${searchAddress}"...`, 'info');
 
         try {
             const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchAddress + ', Polska')}&limit=1`;
@@ -97,7 +135,6 @@ export default function Dashboard() {
             if (geocodeData && geocodeData.length > 0) {
                 const lat = parseFloat(geocodeData[0].lat);
                 const lng = parseFloat(geocodeData[0].lon);
-
                 setCenterCoords({ lat, lng });
 
                 const response = await fetch(
@@ -108,136 +145,173 @@ export default function Dashboard() {
                 if (response.ok) {
                     const data = await response.json();
                     setStations(data);
-                    setMessage(`Znaleziono ${data.length} stacji w promieniu ${radiusKm} km od: ${searchAddress}`);
+                    showMessage(`Znaleziono ${data.length} stacji w promieniu ${radiusKm} km od: ${searchAddress}`, 'success');
                 } else {
-                    setMessage(`Błąd serwera (Status ${response.status}). Zaloguj się ponownie.`);
+                    showMessage(`Błąd serwera (Status ${response.status}).`, 'error');
                 }
             } else {
-                setMessage('Nie znaleziono podanego miasta.');
+                showMessage('Nie znaleziono podanego miasta.', 'warning');
             }
         } catch (err) {
-            console.error('Błąd podczas wyszukiwania:', err);
-            setMessage('Błąd połączenia z serwerem.');
+            showMessage('Błąd połączenia z serwerem geokodowania.', 'error');
         } finally {
             setLoading(false);
         }
     };
 
-    return (
-        <div style={{ fontFamily: 'Arial, sans-serif', backgroundColor: '#f4f6f9', minHeight: '100vh' }}>
-            {/* Górny pasek nawigacyjny (Header) */}
-            <header style={{
-                backgroundColor: '#1e293b',
-                color: '#fff',
-                padding: '15px 30px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-            }}>
-                <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 'bold' }}>System Zarządzania Flotą EV</h1>
-                <button
-                    onClick={handleLogout}
-                    style={{
-                        padding: '8px 16px',
-                        backgroundColor: '#dc3545',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontWeight: 'bold'
-                    }}
+    // WIDOKI (ZAKŁADKI)
+    const renderMapTab = () => (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
+            {/* Panel Wyszukiwania */}
+            <Paper sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                <Button
+                    variant="contained"
+                    color="success"
+                    startIcon={<SyncIcon />}
+                    onClick={handleSync}
+                    disabled={loading}
                 >
-                    Wyloguj się
-                </button>
-            </header>
+                    {loading ? 'Pobieranie...' : 'Pobierz Stacje (OCM)'}
+                </Button>
 
-            <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-                {/* Panel sterowania */}
-                <div style={{
-                    backgroundColor: '#fff',
-                    padding: '15px 20px',
-                    borderRadius: '8px',
-                    marginBottom: '20px',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                    display: 'flex',
-                    gap: '15px',
-                    flexWrap: 'wrap',
-                    alignItems: 'center'
-                }}>
-                    <button
-                        onClick={handleSync}
-                        disabled={loading}
-                        style={{ padding: '10px 15px', backgroundColor: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-                    >
-                        {loading ? 'Pobieranie...' : 'Pobierz Stacje (OCM)'}
-                    </button>
+                <Box sx={{ flexGrow: 1 }} />
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderLeft: '2px solid #eee', paddingLeft: '15px' }}>
-                        <input
-                            type="text"
-                            placeholder="Wpisz miasto/adres (np. Gliwice)"
-                            value={searchAddress}
-                            onChange={(e) => setSearchAddress(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleSearchByAddress()}
-                            style={{ padding: '8px', width: '220px', borderRadius: '4px', border: '1px solid #ccc' }}
-                        />
-                        <label style={{ marginLeft: '5px' }}>Promień:</label>
-                        <input
-                            type="number"
-                            value={radiusKm}
-                            onChange={(e) => setRadiusKm(e.target.value)}
-                            style={{ width: '55px', padding: '7px', borderRadius: '4px', border: '1px solid #ccc' }}
-                        />
-                        <span>km</span>
-                        <button
-                            onClick={handleSearchByAddress}
-                            disabled={loading}
-                            style={{ padding: '8px 14px', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-                        >
-                            Szukaj stacji
-                        </button>
-                    </div>
-                </div>
+                <TextField
+                    size="small"
+                    label="Miasto / Adres"
+                    value={searchAddress}
+                    onChange={(e) => setSearchAddress(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearchByAddress()}
+                />
+                <TextField
+                    size="small"
+                    label="Promień (km)"
+                    type="number"
+                    value={radiusKm}
+                    onChange={(e) => setRadiusKm(e.target.value)}
+                    sx={{ width: 100 }}
+                />
+                <Button
+                    variant="contained"
+                    color="primary"
+                    startIcon={<SearchIcon />}
+                    onClick={handleSearchByAddress}
+                    disabled={loading}
+                >
+                    Szukaj
+                </Button>
+            </Paper>
 
-                {message && (
-                    <div style={{
-                        padding: '12px 15px',
-                        backgroundColor: message.includes('Błąd') || message.includes('wybrać') ? '#f8d7da' : '#e2e3e5',
-                        color: message.includes('Błąd') ? '#721c24' : '#383d41',
-                        borderRadius: '4px',
-                        marginBottom: '15px',
-                        fontWeight: '500'
-                    }}>
-                        {message}
-                    </div>
-                )}
+            {/* Komunikaty */}
+            {message.text && <Alert severity={message.type}>{message.text}</Alert>}
 
-                {/* Mapa Leaflet */}
-                <div style={{ height: '520px', width: '100%', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
-                    <MapContainer center={[centerCoords.lat, centerCoords.lng]} zoom={10} style={{ height: '100%', width: '100%' }}>
-                        <TileLayer
-                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        />
+            {/* Mapa ograniczona do reszty dostępnego miejsca (nie zasłania aplikacji) */}
+            <Paper sx={{ flexGrow: 1, minHeight: '500px', borderRadius: 2, overflow: 'hidden' }}>
+                <MapContainer center={[centerCoords.lat, centerCoords.lng]} zoom={10} style={{ height: '100%', width: '100%' }}>
+                    <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                    <MapController center={centerCoords} />
+                    {stations.map((st) => (
+                        st.latitude && st.longitude && (
+                            <Marker key={st.id} position={[st.latitude, st.longitude]}>
+                                <Popup>
+                                    <strong>{st.name}</strong><br />
+                                    Moc: {st.powerKW || 22} kW<br />
+                                    Dostępność: {st.isAvailable ? 'Dostępna' : 'Zajęta'}<br />
+                                    {st.latitude.toFixed(4)}, {st.longitude.toFixed(4)}
+                                </Popup>
+                            </Marker>
+                        )
+                    ))}
+                </MapContainer>
+            </Paper>
+        </Box>
+    );
 
-                        <MapController center={centerCoords} />
+    const renderVehiclesTab = () => (
+        <Paper sx={{ p: 3 }}>
+            <Typography variant="h5" gutterBottom>Zarządzanie Pojazdami</Typography>
+            <Typography variant="body1" color="textSecondary" sx={{ mb: 2 }}>
+                Lista pojazdów pobrana z backendu (/api/vehicles).
+            </Typography>
+            {vehicles.length === 0 ? (
+                <Alert severity="info">Brak pojazdów w bazie danych.</Alert>
+            ) : (
+                <ul>
+                    {vehicles.map(v => (
+                        <li key={v.id}>
+                            <strong>{v.brand} {v.model}</strong> - Zasięg: {v.rangeKm} km, Bateria: {v.batteryCapacityKwh} kWh
+                        </li>
+                    ))}
+                </ul>
+            )}
+            {/* W następnym kroku dodamy tu formularz dodawania pojazdu */}
+            <Button variant="outlined" sx={{ mt: 2 }}>+ Dodaj nowy pojazd</Button>
+        </Paper>
+    );
 
-                        {stations.map((st) => (
-                            st.latitude && st.longitude && (
-                                <Marker key={st.id} position={[st.latitude, st.longitude]}>
-                                    <Popup>
-                                        <strong>{st.name}</strong><br />
-                                        Moc: {st.powerKW || 22} kW<br />
-                                        Dostępność: {st.isAvailable ? 'Dostępna' : 'Zajęta'}<br />
-                                        Współrzędne: {st.latitude.toFixed(4)}, {st.longitude.toFixed(4)}
-                                    </Popup>
-                                </Marker>
-                            )
-                        ))}
-                    </MapContainer>
-                </div>
-            </div>
-        </div>
+    const renderRoutesTab = () => (
+        <Paper sx={{ p: 3 }}>
+            <Typography variant="h5" gutterBottom>Planowanie Tras</Typography>
+            <Typography variant="body1" color="textSecondary">
+                Tutaj znajdzie się moduł do przypisywania pojazdów do punktów docelowych (korzystający z RouteController).
+            </Typography>
+        </Paper>
+    );
+
+    return (
+        <Box sx={{ display: 'flex', height: '100vh', backgroundColor: '#f4f6f9' }}>
+            {/* Górny Pasek */}
+            <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, backgroundColor: '#1e293b' }}>
+                <Toolbar>
+                    <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
+                        System Zarządzania Flotą EV
+                    </Typography>
+                    <Button color="inherit" onClick={handleLogout} startIcon={<LogoutIcon />}>
+                        Wyloguj się
+                    </Button>
+                </Toolbar>
+            </AppBar>
+
+            {/* Menu Boczne */}
+            <Drawer
+                variant="permanent"
+                sx={{
+                    width: drawerWidth,
+                    flexShrink: 0,
+                    [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: 'border-box' },
+                }}
+            >
+                <Toolbar /> {/* Pusty toolbar aby przesunąć listę pod AppBar */}
+                <Box sx={{ overflow: 'auto' }}>
+                    <List>
+                        <ListItem button selected={activeTab === 'mapa'} onClick={() => setActiveTab('mapa')}>
+                            <ListItemIcon><MapIcon color={activeTab === 'mapa' ? 'primary' : 'inherit'} /></ListItemIcon>
+                            <ListItemText primary="Mapa i Stacje" />
+                        </ListItem>
+                        <ListItem button selected={activeTab === 'pojazdy'} onClick={() => setActiveTab('pojazdy')}>
+                            <ListItemIcon><DirectionsCarIcon color={activeTab === 'pojazdy' ? 'primary' : 'inherit'} /></ListItemIcon>
+                            <ListItemText primary="Flota Pojazdów" />
+                        </ListItem>
+                        <ListItem button selected={activeTab === 'trasy'} onClick={() => setActiveTab('trasy')}>
+                            <ListItemIcon><RouteIcon color={activeTab === 'trasy' ? 'primary' : 'inherit'} /></ListItemIcon>
+                            <ListItemText primary="Trasy i Planowanie" />
+                        </ListItem>
+                    </List>
+                </Box>
+            </Drawer>
+
+            {/* Główna zawartość */}
+            <Box component="main" sx={{ flexGrow: 1, p: 3, display: 'flex', flexDirection: 'column' }}>
+                <Toolbar /> {/* Odstęp na górny pasek */}
+
+                {/* Wyświetlanie odpowiedniej zakładki na podstawie stanu */}
+                {activeTab === 'mapa' && renderMapTab()}
+                {activeTab === 'pojazdy' && renderVehiclesTab()}
+                {activeTab === 'trasy' && renderRoutesTab()}
+            </Box>
+        </Box>
     );
 }

@@ -1,35 +1,17 @@
-import React, { useState } from 'react';
-import Login from './pages/Login';
+import React from 'react';
 import Dashboard from './pages/Dashboard';
-import { CssBaseline, ThemeProvider, createTheme } from '@mui/material';
+import Login from './pages/Login';
+import './App.css';
 
-const theme = createTheme({
-  palette: {
-    mode: 'light',
-  },
-});
+export default function App() {
+  const path = window.location.pathname;
+  const token = localStorage.getItem('token');
 
-function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(
-      !!localStorage.getItem('jwtToken')
-  );
+  // Jeśli użytkownik nie ma tokena lub weszedł na /login, pokazujemy logowanie
+  if (path === '/login' || !token || token === 'undefined' || token === 'null') {
+    return <Login />;
+  }
 
-  const handleLogout = () => {
-    localStorage.removeItem('jwtToken');
-    localStorage.removeItem('employeeId');
-    setIsLoggedIn(false);
-  };
-
-  return (
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        {!isLoggedIn ? (
-            <Login onLoginSuccess={() => setIsLoggedIn(true)} />
-        ) : (
-            <Dashboard onLogout={handleLogout} />
-        )}
-      </ThemeProvider>
-  );
+  // W przeciwnym razie ładujemy główny panel
+  return <Dashboard />;
 }
-
-export default App;

@@ -10,7 +10,7 @@ import {
 } from '@mui/material';
 import api from '../api/axios';
 
-export default function Login({ onLoginSuccess }) {
+export default function Login() {
     const [employeeId, setEmployeeId] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -27,13 +27,14 @@ export default function Login({ onLoginSuccess }) {
 
             const { token, employeeId: id } = response.data;
 
-            localStorage.setItem('jwtToken', token);
+            // Zapisujemy token pod kluczem 'token'
+            localStorage.setItem('token', token);
             localStorage.setItem('employeeId', id);
 
-            if (onLoginSuccess) {
-                onLoginSuccess();
-            }
+            // Natychmiastowe przekierowanie do głównego panelu
+            window.location.href = '/';
         } catch (err) {
+            console.error(err);
             setError('Błędne ID pracownika lub hasło.');
         }
     };
