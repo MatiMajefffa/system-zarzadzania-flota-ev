@@ -3,6 +3,7 @@ package com.evfleet.systemzarzadzaniaflotaev.security;
 import com.evfleet.systemzarzadzaniaflotaev.dto.AuthRequest;
 import com.evfleet.systemzarzadzaniaflotaev.dto.AuthResponse;
 import com.evfleet.systemzarzadzaniaflotaev.dto.RegisterRequest;
+import com.evfleet.systemzarzadzaniaflotaev.model.Role;
 import com.evfleet.systemzarzadzaniaflotaev.model.User;
 import com.evfleet.systemzarzadzaniaflotaev.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +25,7 @@ public class AuthenticationService {
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         User user = User.builder()
-                .role(request.role())
+                .role(Role.ADMIN) // Wymuszenie roli ADMIN przy rejestracji
                 .password("")
                 .build();
         user = repository.save(user);
