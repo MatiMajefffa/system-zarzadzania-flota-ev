@@ -43,11 +43,11 @@ export default function Dashboard() {
     const [radiusKm, setRadiusKm] = useState(15);
     const [centerCoords, setCenterCoords] = useState({ lat: 50.2649, lng: 19.0238 });
     const [searchAddress, setSearchAddress] = useState('Katowice');
-    const [isAuthenticated, setIsAuthenticated] = useState(true); // <--- NOWY STAN
+    const [isAuthenticated, setIsAuthenticated] = useState(true);
 
     const token = localStorage.getItem('token');
 
-    // Mądre sprawdzanie tokena (bez infinite-loop przeładowań)
+    // Mądre sprawdzanie tokena
     useEffect(() => {
         if (!token || token === 'undefined' || token === 'null') {
             setIsAuthenticated(false);
@@ -59,17 +59,13 @@ export default function Dashboard() {
 
     const handleLogout = () => {
         localStorage.removeItem('token');
-        setIsAuthenticated(false);
+        localStorage.removeItem('employeeId');
+        window.location.href = '/login';
     };
 
-    // Jeśli nie ma tokena, zamiast odświeżać stronę, pokazujemy proste okno, które poprosi o kliknięcie w link
     if (!isAuthenticated) {
-        return (
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mt: 10 }}>
-                <Typography variant="h5" color="error" gutterBottom>Sesja wygasła lub brak autoryzacji</Typography>
-                <Button variant="contained" href="/login">Przejdź do logowania</Button>
-            </Box>
-        );
+        window.location.href = '/login';
+        return null;
     }
 
     const showMessage = (text, type = 'info') => setMessage({ text, type });
@@ -88,7 +84,7 @@ export default function Dashboard() {
         }
     };
 
-    // API: Pojazdy (korzysta z Twojego VehicleController)
+    // API: Pojazdy
     const fetchVehicles = async () => {
         try {
             const response = await fetch('/api/vehicles', { headers: { Authorization: `Bearer ${token}` } });
@@ -162,7 +158,6 @@ export default function Dashboard() {
     // WIDOKI (ZAKŁADKI)
     const renderMapTab = () => (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
-            {/* Panel Wyszukiwania */}
             <Paper sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
                 <Button
                     variant="contained"
@@ -202,10 +197,8 @@ export default function Dashboard() {
                 </Button>
             </Paper>
 
-            {/* Komunikaty */}
             {message.text && <Alert severity={message.type}>{message.text}</Alert>}
 
-            {/* Mapa ograniczona do reszty dostępnego miejsca (nie zasłania aplikacji) */}
             <Paper sx={{ flexGrow: 1, minHeight: '500px', borderRadius: 2, overflow: 'hidden' }}>
                 <MapContainer center={[centerCoords.lat, centerCoords.lng]} zoom={10} style={{ height: '100%', width: '100%' }}>
                     <TileLayer
@@ -242,12 +235,11 @@ export default function Dashboard() {
                 <ul>
                     {vehicles.map(v => (
                         <li key={v.id}>
-                            <strong>{v.brand} {v.model}</strong> - Zasięg: {v.rangeKm} km, Bateria: {v.batteryCapacityKwh} kWh
+                            <strong>{v.brand} {v.model}</strong> — Zasięg: {v.rangeKm} km, Bateria: {v.batteryCapacityKwh} kWh
                         </li>
                     ))}
                 </ul>
             )}
-            {/* W następnym kroku dodamy tu formularz dodawania pojazdu */}
             <Button variant="outlined" sx={{ mt: 2 }}>+ Dodaj nowy pojazd</Button>
         </Paper>
     );
@@ -263,7 +255,6 @@ export default function Dashboard() {
 
     return (
         <Box sx={{ display: 'flex', height: '100vh', backgroundColor: '#f4f6f9' }}>
-            {/* Górny Pasek */}
             <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, backgroundColor: '#1e293b' }}>
                 <Toolbar>
                     <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
@@ -275,7 +266,6 @@ export default function Dashboard() {
                 </Toolbar>
             </AppBar>
 
-            {/* Menu Boczne */}
             <Drawer
                 variant="permanent"
                 sx={{
@@ -284,7 +274,7 @@ export default function Dashboard() {
                     [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: 'border-box' },
                 }}
             >
-                <Toolbar /> {/* Pusty toolbar aby przesunąć listę pod AppBar */}
+                <Toolbar />
                 <Box sx={{ overflow: 'auto' }}>
                     <List>
                         <ListItem button selected={activeTab === 'mapa'} onClick={() => setActiveTab('mapa')}>
@@ -303,11 +293,8 @@ export default function Dashboard() {
                 </Box>
             </Drawer>
 
-            {/* Główna zawartość */}
             <Box component="main" sx={{ flexGrow: 1, p: 3, display: 'flex', flexDirection: 'column' }}>
-                <Toolbar /> {/* Odstęp na górny pasek */}
-
-                {/* Wyświetlanie odpowiedniej zakładki na podstawie stanu */}
+                <Toolbar />
                 {activeTab === 'mapa' && renderMapTab()}
                 {activeTab === 'pojazdy' && renderVehiclesTab()}
                 {activeTab === 'trasy' && renderRoutesTab()}
