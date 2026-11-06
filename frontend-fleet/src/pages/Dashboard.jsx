@@ -87,6 +87,7 @@ export default function Dashboard() {
     const [routeWaypoints, setRouteWaypoints] = useState({ start: null, end: null, stops: [] }); // Punkty na mapie
 
     const token = localStorage.getItem('token');
+    const employeeId = localStorage.getItem('employeeId');
 
     useEffect(() => {
         if (!token || token === 'undefined' || token === 'null') {
@@ -569,6 +570,16 @@ export default function Dashboard() {
                 }}
             >
                 <Toolbar />
+                {/* === DODANY PANEL Z INFORMACJAMI O UŻYTKOWNIKU === */}
+                <Box sx={{ p: 2, backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                    <Typography variant="body2" color="textSecondary">
+                        Zalogowany użytkownik:
+                    </Typography>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#1e293b' }}>
+                        ID Pracownika: {employeeId || 'Nieznane'}
+                    </Typography>
+                </Box>
+                {/* ================================================= */}
                 <Box sx={{ overflow: 'auto' }}>
                     <List>
                         <ListItem button selected={activeTab === 'mapa'} onClick={() => setActiveTab('mapa')}>

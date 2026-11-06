@@ -23,6 +23,16 @@ public class User implements UserDetails {
     @SequenceGenerator(name = "user_seq", sequenceName = "users_id_seq", initialValue = 1000, allocationSize = 1)
     private Long id;
 
+    // DODANE POLA:
+    @Column(name = "first_name")
+    private String firstName;
+
+    @Column(name = "last_name")
+    private String lastName;
+
+    @Column(unique = true)
+    private String email;
+
     @Column(nullable = false)
     private String password;
 

@@ -24,14 +24,21 @@ public class AuthenticationService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        User user = User.builder()
-                .role(Role.ADMIN) // Wymuszenie roli ADMIN przy rejestracji
-                .password("")
-                .build();
-        user = repository.save(user);
+        // Logika przypisywania roli: jeśli podano sekretny kod "6969", to MANAGER, w przeciwnym razie DRIVER
+        Role assignedRole = Role.DRIVER;
+        if ("6969".equals(request.secretCode())) {
+            assignedRole = Role.MANAGER;
+        }
 
-        user.setPassword(passwordEncoder.encode(String.valueOf(user.getId())));
-        repository.save(user);
+        User user = User.builder()
+                .firstName(request.firstname())
+                .lastName(request.lastname())
+                .email(request.email())
+                .password(passwordEncoder.encode(request.password()))
+                .role(assignedRole)
+                .build();
+
+        user = repository.save(user);
 
         var jwtToken = jwtService.generateToken(user);
         return new AuthResponse(jwtToken, user.getId());
