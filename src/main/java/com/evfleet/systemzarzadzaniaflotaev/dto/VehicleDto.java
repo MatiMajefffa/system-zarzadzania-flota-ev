@@ -10,6 +10,9 @@ import lombok.Setter;
 public class VehicleDto {
 
     private Long id;
+    private Boolean isBlocked;
+    private Double totalMileage;
+    private String currentBase;
 
     @NotBlank(message = "Numer rejestracyjny nie może być pusty")
     private String registrationNumber;
