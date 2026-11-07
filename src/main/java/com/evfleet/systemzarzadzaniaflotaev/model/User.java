@@ -36,6 +36,9 @@ public class User implements UserDetails {
     @Column(nullable = false)
     private String password;
 
+    @Column(name = "last_route")
+    private String lastRoute;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;
