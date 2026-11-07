@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
+import com.evfleet.systemzarzadzaniaflotaev.model.VehicleType;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -115,35 +116,41 @@ public class DatabaseSeeder implements CommandLineRunner {
             String base = bases[i];
             String platePrefix = plates[i];
 
+            // 1. Auto Osobowe / VIP (Przewóz osób)
             fleet.add(createVehicle(
                     platePrefix + " 1" + i + "00VIP",
                     (String) luxuryCars[i][0],
                     (Double) luxuryCars[i][1],
                     base,
-                    1500.0 + (i * 200)
+                    1500.0 + (i * 200),
+                    VehicleType.OSOBOWY
             ));
 
+            // 2. Mały Dostawczak (Przewóz małych paczek)
             fleet.add(createVehicle(
                     platePrefix + " 2" + i + "00VAN",
                     (String) smallVans[i][0],
                     (Double) smallVans[i][1],
                     base,
-                    12500.0 + (i * 1500)
+                    12500.0 + (i * 1500),
+                    VehicleType.MALY_DOSTAWCZAK
             ));
 
+            // 3. Duży Dostawczak (Przewóz dużych paczek)
             fleet.add(createVehicle(
                     platePrefix + " 3" + i + "00TRK",
                     (String) largeVans[i][0],
                     (Double) largeVans[i][1],
                     base,
-                    25000.0 + (i * 3000)
+                    25000.0 + (i * 3000),
+                    VehicleType.DUZY_DOSTAWCZAK
             ));
         }
 
         vehicleRepository.saveAll(fleet);
     }
 
-    private Vehicle createVehicle(String registration, String model, Double battery, String base, Double mileage) {
+    private Vehicle createVehicle(String registration, String model, Double battery, String base, Double mileage, VehicleType type) {
         Vehicle v = new Vehicle();
         v.setRegistrationNumber(registration);
         v.setModel(model);
@@ -153,6 +160,7 @@ public class DatabaseSeeder implements CommandLineRunner {
         v.setIsBlocked(false);
         v.setTotalMileage(mileage);
         v.setCurrentBase(base);
+        v.setVehicleType(type); // <-- Przypisanie typu auta
         return v;
     }
 

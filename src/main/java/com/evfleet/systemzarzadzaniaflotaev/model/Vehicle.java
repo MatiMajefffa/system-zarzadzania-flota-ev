@@ -28,6 +28,10 @@ public class Vehicle {
     private Integer stateOfCharge;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "vehicle_type")
+    private VehicleType vehicleType;
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private VehicleStatus status;
 
