@@ -236,10 +236,15 @@ export default function Dashboard() {
     };
 
     const fetchNotifications = async () => {
-        setNotifications([
-            { id: 1, type: 'SOS', message: 'Kierowca #2 wezwał pomoc na trasie Gliwice-Zabrze!', date: new Date().toLocaleString() },
-            { id: 2, type: 'INFO', message: 'Pojazd SK12345 wrócił do bazy Tychy.', date: new Date().toLocaleString() }
-        ]);
+        try {
+            const response = await fetch('/api/reports', { headers: { Authorization: `Bearer ${token}` } });
+            if (response.ok) {
+                const data = await response.json();
+                setNotifications(data);
+            }
+        } catch (err) {
+            console.error("Błąd pobierania powiadomień:", err);
+        }
     };
 
     const fetchLastRoute = async () => {
@@ -315,7 +320,24 @@ export default function Dashboard() {
     };
 
     const handleSOS = async () => {
-        showMessage('Wezwano pomoc drogową! Wysłano alarm do Menedżera.', 'error', 8000);
+        setLoading(true);
+        try {
+            const response = await fetch('/api/reports', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({
+                    description: '🚨 ALARM SOS: Kierowca wezwał pomoc drogową na trasie!',
+                    employeeId: employeeId || 'Nieznany'
+                })
+            });
+            if (response.ok) {
+                showMessage('Wezwano pomoc drogową! Wysłano alarm SOS do Menedżera.', 'error', 8000);
+            }
+        } catch (err) {
+            showMessage('Błąd wysyłania alarmu SOS.', 'error');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleFinishRoute = () => {
