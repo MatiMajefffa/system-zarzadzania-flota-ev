@@ -33,7 +33,18 @@ public class JwtService {
     }
 
     public String generateToken(UserDetails userDetails) {
-        return generateToken(new HashMap<>(), userDetails);
+        Map<String, Object> extraClaims = new HashMap<>();
+
+        // Wyciągamy pierwszą rolę przypisaną do użytkownika w Spring Security
+        String role = userDetails.getAuthorities().stream()
+                .findFirst()
+                .map(authority -> authority.getAuthority())
+                .orElse("DRIVER");
+
+        // Zapisujemy rolę pod kluczem "role", aby frontend mógł ją łatwo odczytać
+        extraClaims.put("role", role);
+
+        return generateToken(extraClaims, userDetails);
     }
 
     public String generateToken(Map<String, Object> extraClaims, UserDetails userDetails) {

@@ -16,6 +16,8 @@ import SyncIcon from '@mui/icons-material/Sync';
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
 import SaveIcon from '@mui/icons-material/Save';
+import PersonIcon from '@mui/icons-material/Person';
+import WarningIcon from '@mui/icons-material/Warning';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -26,7 +28,6 @@ L.Icon.Default.mergeOptions({
 
 const drawerWidth = 240;
 
-// Kontroler wyśrodkowania dla mapy głównej
 function MapController({ center }) {
     const map = useMap();
     useEffect(() => {
@@ -37,7 +38,6 @@ function MapController({ center }) {
     return null;
 }
 
-// NOWY: Kontroler dopasowujący widok do całej trasy
 function RouteBoundsController({ waypoints }) {
     const map = useMap();
     useEffect(() => {
@@ -55,8 +55,30 @@ function RouteBoundsController({ waypoints }) {
     return null;
 }
 
+// Funkcja do dekodowania tokena JWT i wyciągania roli
+const getRoleFromToken = (token) => {
+    if (!token) return 'DRIVER';
+    try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        // Sprawdzamy standardowe miejsca, gdzie Spring wrzuca role (authorities, role lub claim 'sub')
+        if (payload.role) return payload.role;
+        if (payload.authorities && payload.authorities.length > 0) {
+            return payload.authorities[0].authority || payload.authorities[0];
+        }
+        return 'DRIVER'; // Domyślnie
+    } catch (e) {
+        return 'DRIVER';
+    }
+};
+
 export default function Dashboard() {
-    const [activeTab, setActiveTab] = useState('mapa');
+    const token = localStorage.getItem('token');
+    const employeeId = localStorage.getItem('employeeId');
+    const userRole = getRoleFromToken(token); // Weryfikacja roli (MANAGER lub DRIVER)
+
+    // Domyślna zakładka na podstawie roli
+    const [activeTab, setActiveTab] = useState(userRole === 'MANAGER' ? 'mapa' : 'panel-kierowcy');
+
     const [stations, setStations] = useState([]);
     const [vehicles, setVehicles] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -82,21 +104,26 @@ export default function Dashboard() {
     });
 
     const [routeResult, setRouteResult] = useState(null);
-    // STANY DO RYSOWANIA TRASY:
-    const [routePath, setRoutePath] = useState([]); // Geometria drogi
-    const [routeWaypoints, setRouteWaypoints] = useState({ start: null, end: null, stops: [] }); // Punkty na mapie
+    const [routePath, setRoutePath] = useState([]);
+    const [routeWaypoints, setRouteWaypoints] = useState({ start: null, end: null, stops: [] });
 
-    const token = localStorage.getItem('token');
-    const employeeId = localStorage.getItem('employeeId');
+    // === NOWE STANY DLA KIEROWCY ===
+    const [lastRoute, setLastRoute] = useState(null);
+    const [driverNavForm, setDriverNavForm] = useState({ startAddress: '', endAddress: '' });
+    const [reportForm, setReportForm] = useState({ description: '' });
 
     useEffect(() => {
         if (!token || token === 'undefined' || token === 'null') {
             setIsAuthenticated(false);
         } else {
-            fetchStations();
-            fetchVehicles();
+            if (userRole === 'MANAGER') {
+                fetchStations();
+                fetchVehicles();
+            } else {
+                fetchLastRoute(); // Pobieranie historii dla kierowcy
+            }
         }
-    }, [token]);
+    }, [token, userRole]);
 
     const handleLogout = () => {
         localStorage.removeItem('token');
@@ -119,17 +146,12 @@ export default function Dashboard() {
     const fetchStations = async () => {
         try {
             const response = await fetch('/api/charging-stations', { headers: { Authorization: `Bearer ${token}` } });
-            if (response.ok) {
-                setStations(await response.json());
-            } else if (response.status === 401 || response.status === 403) {
-                handleLogout();
-            }
-        } catch (err) {
-            console.error(err);
-        }
+            if (response.ok) setStations(await response.json());
+            else if (response.status === 401 || response.status === 403) handleLogout();
+        } catch (err) { console.error(err); }
     };
 
-    const handleSync = async () => {
+    const handleSync = async () => { /* ... dotychczasowy kod handleSync ... */
         setLoading(true);
         showMessage('Pobieranie stacji z OpenChargeMap...', 'info');
         try {
@@ -151,7 +173,7 @@ export default function Dashboard() {
         }
     };
 
-    const handleSearchByAddress = async () => {
+    const handleSearchByAddress = async () => { /* ... dotychczasowy kod handleSearchByAddress ... */
         if (!searchAddress.trim()) return;
         setLoading(true);
         showMessage(`Szukanie lokalizacji "${searchAddress}"...`, 'info');
@@ -191,15 +213,11 @@ export default function Dashboard() {
     const fetchVehicles = async () => {
         try {
             const response = await fetch('/api/vehicles', { headers: { Authorization: `Bearer ${token}` } });
-            if (response.ok) {
-                setVehicles(await response.json());
-            }
-        } catch (err) {
-            console.error('Błąd pobierania pojazdów:', err);
-        }
+            if (response.ok) setVehicles(await response.json());
+        } catch (err) { console.error('Błąd pobierania pojazdów:', err); }
     };
 
-    const handleAddVehicle = async (e) => {
+    const handleAddVehicle = async (e) => { /* ... dotychczasowy kod handleAddVehicle ... */
         e.preventDefault();
         setLoading(true);
 
@@ -214,10 +232,7 @@ export default function Dashboard() {
         try {
             const response = await fetch('/api/vehicles', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`
-                },
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                 body: JSON.stringify(payload)
             });
 
@@ -237,10 +252,7 @@ export default function Dashboard() {
         }
     };
 
-    // ==========================================
-    // API: TRASY (Z OSRM API DLA RYSOWANIA DROGI)
-    // ==========================================
-    const handleCalculateRoute = async () => {
+    const handleCalculateRoute = async () => { /* ... dotychczasowy kod handleCalculateRoute ... */
         if (!routeForm.vehicleId || !routeForm.startAddress || !routeForm.endAddress) {
             showMessage('Proszę wybrać pojazd oraz wpisać punkt startowy i docelowy.', 'warning');
             return;
@@ -253,7 +265,6 @@ export default function Dashboard() {
         setRouteWaypoints({ start: null, end: null, stops: [] });
 
         try {
-            // 1. Geokodowanie Start i Koniec
             const startRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(routeForm.startAddress + ', Polska')}&limit=1`);
             const startData = await startRes.json();
             if (!startData || startData.length === 0) {
@@ -274,7 +285,6 @@ export default function Dashboard() {
 
             showMessage('Współrzędne pobrane. Obliczanie optymalnej trasy przez backend...', 'info', null);
 
-            // 2. Zapytanie do Spring Boot (Twojego RouteController'a)
             const url = `/api/routes/plan?vehicleId=${routeForm.vehicleId}&startLat=${startLat}&startLon=${startLon}&endLat=${endLat}&endLon=${endLon}&temperature=15.0`;
             const response = await fetch(url, {
                 method: 'GET',
@@ -285,7 +295,6 @@ export default function Dashboard() {
                 const data = await response.json();
                 setRouteResult(data);
 
-                // Zbieranie punktów postojów z backendu (jeśli stacje posiadają pole latitude i longitude)
                 const stops = (data.chargingStops || []).filter(s => s.latitude && s.longitude).map(s => ({
                     lat: s.latitude, lng: s.longitude, name: s.stationName
                 }));
@@ -296,9 +305,7 @@ export default function Dashboard() {
 
                 showMessage('Pobieranie geometrii drogi...', 'info', null);
 
-                // 3. Pobranie dokładnej ścieżki (dróg) z OSRM na podstawie punktów z backendu
                 try {
-                    // OSRM przyjmuje format: lon,lat;lon,lat;lon,lat
                     const osrmCoords = [
                         `${startLon},${startLat}`,
                         ...stops.map(s => `${s.lng},${s.lat}`),
@@ -310,13 +317,11 @@ export default function Dashboard() {
                     const osrmData = await osrmRes.json();
 
                     if (osrmData.routes && osrmData.routes.length > 0) {
-                        // Leaflet Polyline potrzebuje formatu [lat, lon], a GeoJSON zwraca [lon, lat]
                         const pathCoords = osrmData.routes[0].geometry.coordinates.map(coord => [coord[1], coord[0]]);
                         setRoutePath(pathCoords);
                     }
                 } catch (osrmErr) {
                     console.error("Błąd generowania ścieżki z OSRM", osrmErr);
-                    // Rysowanie prostej linii w razie awarii OSRM
                     setRoutePath([ [startLat, startLon], ...stops.map(s => [s.lat, s.lng]), [endLat, endLon] ]);
                 }
 
@@ -333,9 +338,241 @@ export default function Dashboard() {
     };
 
     // ==========================================
+    // NOWE FUNKCJE DLA KIEROWCY
+    // ==========================================
+    const fetchLastRoute = async () => {
+        try {
+            const response = await fetch(`/api/routes/last?employeeId=${employeeId}`, { headers: { Authorization: `Bearer ${token}` } });
+            if (response.ok) {
+                const data = await response.json();
+                setLastRoute(data);
+            }
+        } catch (err) {
+            console.error('Błąd pobierania historii trasy:', err);
+        }
+    };
+
+    const handleAutoAssignRoute = async () => {
+        if (!driverNavForm.startAddress || !driverNavForm.endAddress) {
+            showMessage('Wpisz punkt startowy i docelowy.', 'warning');
+            return;
+        }
+
+        setLoading(true);
+        showMessage('Szukanie optymalnego pojazdu z bazy i wyznaczanie trasy...', 'info', null);
+        setRouteResult(null);
+        setRoutePath([]);
+        setRouteWaypoints({ start: null, end: null, stops: [] });
+
+        try {
+            // Geokodowanie Start i Koniec
+            const startRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(driverNavForm.startAddress + ', Polska')}&limit=1`);
+            const startData = await startRes.json();
+            if (!startData || startData.length === 0) {
+                showMessage(`Nie znaleziono adresu: ${driverNavForm.startAddress}`, 'error');
+                setLoading(false); return;
+            }
+            const startLat = parseFloat(startData[0].lat);
+            const startLon = parseFloat(startData[0].lon);
+
+            const endRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(driverNavForm.endAddress + ', Polska')}&limit=1`);
+            const endData = await endRes.json();
+            if (!endData || endData.length === 0) {
+                showMessage(`Nie znaleziono adresu końcowego: ${driverNavForm.endAddress}`, 'error');
+                setLoading(false); return;
+            }
+            const endLat = parseFloat(endData[0].lat);
+            const endLon = parseFloat(endData[0].lon);
+
+            // Nowy Endpoint automatycznego przypisywania (BEZ VEHICLE ID)
+            const url = `/api/routes/plan-auto?startLat=${startLat}&startLon=${startLon}&endLat=${endLat}&endLon=${endLon}&temperature=15.0`;
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setRouteResult(data);
+
+                const stops = (data.chargingStops || []).filter(s => s.latitude && s.longitude).map(s => ({
+                    lat: s.latitude, lng: s.longitude, name: s.stationName
+                }));
+
+                const startPoint = { lat: startLat, lng: startLon, name: driverNavForm.startAddress };
+                const endPoint = { lat: endLat, lng: endLon, name: driverNavForm.endAddress };
+                setRouteWaypoints({ start: startPoint, end: endPoint, stops });
+
+                try {
+                    const osrmCoords = [
+                        `${startLon},${startLat}`,
+                        ...stops.map(s => `${s.lng},${s.lat}`),
+                        `${endLon},${endLat}`
+                    ].join(';');
+
+                    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${osrmCoords}?overview=full&geometries=geojson`;
+                    const osrmRes = await fetch(osrmUrl);
+                    const osrmData = await osrmRes.json();
+
+                    if (osrmData.routes && osrmData.routes.length > 0) {
+                        const pathCoords = osrmData.routes[0].geometry.coordinates.map(coord => [coord[1], coord[0]]);
+                        setRoutePath(pathCoords);
+                    }
+                } catch (osrmErr) {
+                    console.error("Błąd OSRM", osrmErr);
+                    setRoutePath([ [startLat, startLon], ...stops.map(s => [s.lat, s.lng]), [endLat, endLon] ]);
+                }
+
+                showMessage(`Przydzielono pojazd! Trasa pomyślnie wyznaczona.`, 'success');
+                fetchLastRoute(); // Odśwież historię
+            } else {
+                showMessage(`Brak dostępnych pojazdów w bazach lub błąd serwera.`, 'error', null);
+            }
+        } catch (err) {
+            showMessage('Błąd połączenia z serwerem.', 'error', null);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleReportDamage = async () => {
+        if (!reportForm.description) return;
+        setLoading(true);
+        try {
+            const response = await fetch('/api/reports', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ description: reportForm.description, employeeId: employeeId })
+            });
+            if (response.ok) {
+                showMessage('Zgłoszenie zostało wysłane do menedżera.', 'success');
+                setReportForm({ description: '' });
+            } else {
+                showMessage('Błąd podczas wysyłania zgłoszenia.', 'error');
+            }
+        } catch (err) {
+            showMessage('Błąd połączenia z serwerem.', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // ==========================================
     // WIDOKI
     // ==========================================
-    const renderMapTab = () => (
+    const renderDriverTab = () => (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {message.text && <Alert severity={message.type} onClose={() => setMessage({text: ''})}>{message.text}</Alert>}
+
+            <Typography variant="h5">Panel Kierowcy</Typography>
+
+            <Grid container spacing={3}>
+                {/* 1. Historia ostatniej trasy */}
+                <Grid item xs={12} md={4}>
+                    <Paper sx={{ p: 3, height: '100%', borderTop: '4px solid #1976d2' }}>
+                        <Typography variant="h6" gutterBottom color="primary">Twoja ostatnia trasa</Typography>
+                        {lastRoute ? (
+                            <Box sx={{ mt: 2 }}>
+                                <Typography variant="body1"><strong>Skąd:</strong> {lastRoute.startAddress || 'Nieznane'}</Typography>
+                                <Typography variant="body1"><strong>Dokąd:</strong> {lastRoute.endAddress || 'Nieznane'}</Typography>
+                                <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+                                    Dystans: {lastRoute.distanceKm ? lastRoute.distanceKm.toFixed(2) : '?'} km
+                                </Typography>
+                            </Box>
+                        ) : (
+                            <Typography variant="body1" color="textSecondary" sx={{ mt: 2 }}>
+                                Brak przypisanych tras w historii.
+                            </Typography>
+                        )}
+                    </Paper>
+                </Grid>
+
+                {/* 2. Nawigacja i Automatyczny Przydział */}
+                <Grid item xs={12} md={8}>
+                    <Paper sx={{ p: 3, height: '100%', borderTop: '4px solid #2e7d32' }}>
+                        <Typography variant="h6" gutterBottom color="success.main">Rozpocznij nową trasę</Typography>
+                        <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+                            Podaj punkt startowy oraz docelowy. System automatycznie znajdzie najbliższą bazę w województwie i przydzieli Ci odpowiednio naładowany pojazd.
+                        </Typography>
+
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} sm={6}>
+                                <TextField fullWidth size="small" label="Punkt startowy (Twoja lokalizacja)" value={driverNavForm.startAddress} onChange={(e) => setDriverNavForm({...driverNavForm, startAddress: e.target.value})} />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField fullWidth size="small" label="Punkt docelowy" value={driverNavForm.endAddress} onChange={(e) => setDriverNavForm({...driverNavForm, endAddress: e.target.value})} />
+                            </Grid>
+                            <Grid item xs={12}>
+                                <Button variant="contained" color="success" startIcon={<RouteIcon />} onClick={handleAutoAssignRoute} disabled={loading} fullWidth>
+                                    {loading ? 'Przetwarzanie...' : 'Przydziel Pojazd i Oblicz Trasę'}
+                                </Button>
+                            </Grid>
+                        </Grid>
+                    </Paper>
+                </Grid>
+            </Grid>
+
+            {/* WIDOK WYNIKU TRASY DLA KIEROWCY (Identyczny jak u menedżera, ale wyżej) */}
+            {routeResult && (
+                <Paper sx={{ p: 3, backgroundColor: '#fdfdfd', border: '1px solid #bbf7d0' }}>
+                    <Typography variant="h6" gutterBottom color="success.main">Szczegóły wyznaczonej trasy i przydziału</Typography>
+                    <Grid container spacing={2}>
+                        <Grid item xs={12}>
+                            <Alert severity="info" sx={{ mb: 2 }}>
+                                <strong>Przydzielono pojazd:</strong> {routeResult.vehicleRegistrationNumber || 'Auto Systemowe'}
+                            </Alert>
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <Typography><strong>Całkowity dystans:</strong> {routeResult.totalDistanceKm ? routeResult.totalDistanceKm.toFixed(2) : (routeResult.distanceKm || 'Brak')} km</Typography>
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                            <Typography><strong>Szacowany czas podróży:</strong> {routeResult.totalTimeMinutes ? routeResult.totalTimeMinutes.toFixed(0) : (routeResult.estimatedTimeMinutes || 'Brak')} min</Typography>
+                        </Grid>
+
+                        {/* MAPA DLA KIEROWCY */}
+                        {routeWaypoints.start && routeWaypoints.end && (
+                            <Box sx={{ height: 450, width: '100%', mt: 3, borderRadius: 2, overflow: 'hidden', border: '1px solid #ccc' }}>
+                                <MapContainer center={[routeWaypoints.start.lat, routeWaypoints.start.lng]} zoom={10} style={{ height: '100%', width: '100%' }}>
+                                    <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                    <RouteBoundsController waypoints={routeWaypoints} />
+                                    <Marker position={[routeWaypoints.start.lat, routeWaypoints.start.lng]}><Popup><strong>Start:</strong> {routeWaypoints.start.name}</Popup></Marker>
+                                    {routeWaypoints.stops.map((stop, i) => (
+                                        <Marker key={`stop-${i}`} position={[stop.lat, stop.lng]}><Popup><strong>Postój {i + 1} (Ładowanie):</strong> {stop.name}</Popup></Marker>
+                                    ))}
+                                    <Marker position={[routeWaypoints.end.lat, routeWaypoints.end.lng]}><Popup><strong>Cel:</strong> {routeWaypoints.end.name}</Popup></Marker>
+                                    {routePath.length > 0 && <Polyline positions={routePath} color="#1e3a8a" weight={5} opacity={0.7} />}
+                                </MapContainer>
+                            </Box>
+                        )}
+                    </Grid>
+                </Paper>
+            )}
+
+            {/* 3. Zgłaszanie usterek */}
+            <Paper sx={{ p: 3, borderTop: '4px solid #d32f2f', mt: 2 }}>
+                <Typography variant="h6" color="error" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <WarningIcon /> Zgłoś awarię lub szkodę
+                </Typography>
+                <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                    Jeśli podczas trasy wystąpił problem z pojazdem, opisz go tutaj. Menedżer zobaczy tę notatkę w systemie.
+                </Typography>
+                <TextField
+                    fullWidth
+                    label="Szczegóły usterki"
+                    multiline
+                    rows={3}
+                    sx={{ mb: 2 }}
+                    value={reportForm.description}
+                    onChange={(e) => setReportForm({...reportForm, description: e.target.value})}
+                />
+                <Button variant="contained" color="error" onClick={handleReportDamage} disabled={loading || !reportForm.description}>
+                    Wyślij zgłoszenie
+                </Button>
+            </Paper>
+        </Box>
+    );
+
+    const renderMapTab = () => ( /* ... dotychczasowy kod renderMapTab (bez zmian) ... */
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
             <Paper sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
                 <Button variant="contained" color="success" startIcon={<SyncIcon />} onClick={handleSync} disabled={loading}>
@@ -372,7 +609,7 @@ export default function Dashboard() {
         </Box>
     );
 
-    const renderVehiclesTab = () => (
+    const renderVehiclesTab = () => ( /* ... dotychczasowy kod renderVehiclesTab (bez zmian) ... */
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {message.text && <Alert severity={message.type} onClose={() => setMessage({text: ''})}>{message.text}</Alert>}
 
@@ -440,10 +677,9 @@ export default function Dashboard() {
         </Box>
     );
 
-    const renderRoutesTab = () => (
+    const renderRoutesTab = () => ( /* ... dotychczasowy kod renderRoutesTab (bez zmian) ... */
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <Typography variant="h5">Planowanie Tras i Optymalizacja</Typography>
-
             <Paper sx={{ p: 3 }}>
                 <Typography variant="h6" gutterBottom>Wyznacz nową trasę</Typography>
                 <Grid container spacing={3}>
@@ -474,7 +710,6 @@ export default function Dashboard() {
                 </Grid>
             </Paper>
 
-            {/* WIDOK WYNIKU TRASY Z MAPĄ */}
             {routeResult && (
                 <Paper sx={{ p: 3, backgroundColor: '#fdfdfd', border: '1px solid #bbf7d0', mt: 1 }}>
                     <Typography variant="h6" gutterBottom color="success.main">Szczegóły wyznaczonej trasy</Typography>
@@ -506,45 +741,22 @@ export default function Dashboard() {
                         )}
                     </Grid>
 
-                    {/* NOWA MAPA TYLKO DLA TRASY */}
                     {routeWaypoints.start && routeWaypoints.end && (
                         <Box sx={{ height: 450, width: '100%', mt: 3, borderRadius: 2, overflow: 'hidden', border: '1px solid #ccc' }}>
-                            <MapContainer
-                                center={[routeWaypoints.start.lat, routeWaypoints.start.lng]}
-                                zoom={10}
-                                style={{ height: '100%', width: '100%' }}
-                            >
+                            <MapContainer center={[routeWaypoints.start.lat, routeWaypoints.start.lng]} zoom={10} style={{ height: '100%', width: '100%' }}>
                                 <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                                 <RouteBoundsController waypoints={routeWaypoints} />
-
-                                {/* Znacznik Start */}
-                                <Marker position={[routeWaypoints.start.lat, routeWaypoints.start.lng]}>
-                                    <Popup><strong>Start:</strong> {routeWaypoints.start.name}</Popup>
-                                </Marker>
-
-                                {/* Znaczniki postojów na ładowanie */}
+                                <Marker position={[routeWaypoints.start.lat, routeWaypoints.start.lng]}><Popup><strong>Start:</strong> {routeWaypoints.start.name}</Popup></Marker>
                                 {routeWaypoints.stops.map((stop, i) => (
-                                    <Marker key={`stop-${i}`} position={[stop.lat, stop.lng]}>
-                                        <Popup><strong>Postój {i + 1} (Ładowanie):</strong> {stop.name}</Popup>
-                                    </Marker>
+                                    <Marker key={`stop-${i}`} position={[stop.lat, stop.lng]}><Popup><strong>Postój {i + 1} (Ładowanie):</strong> {stop.name}</Popup></Marker>
                                 ))}
-
-                                {/* Znacznik Koniec */}
-                                <Marker position={[routeWaypoints.end.lat, routeWaypoints.end.lng]}>
-                                    <Popup><strong>Cel:</strong> {routeWaypoints.end.name}</Popup>
-                                </Marker>
-
-                                {/* Rysowanie samej drogi */}
-                                {routePath.length > 0 && (
-                                    <Polyline positions={routePath} color="#1e3a8a" weight={5} opacity={0.7} />
-                                )}
+                                <Marker position={[routeWaypoints.end.lat, routeWaypoints.end.lng]}><Popup><strong>Cel:</strong> {routeWaypoints.end.name}</Popup></Marker>
+                                {routePath.length > 0 && <Polyline positions={routePath} color="#1e3a8a" weight={5} opacity={0.7} />}
                             </MapContainer>
                         </Box>
                     )}
                 </Paper>
             )}
-
-            {message.text && <Alert severity={message.type} onClose={() => setMessage({text: ''})} sx={{ mt: 2 }}>{message.text}</Alert>}
         </Box>
     );
 
@@ -570,36 +782,49 @@ export default function Dashboard() {
                 }}
             >
                 <Toolbar />
-                {/* === DODANY PANEL Z INFORMACJAMI O UŻYTKOWNIKU === */}
                 <Box sx={{ p: 2, backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                    <Typography variant="body2" color="textSecondary">
-                        Zalogowany użytkownik:
-                    </Typography>
+                    <Typography variant="body2" color="textSecondary">Zalogowany użytkownik:</Typography>
                     <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#1e293b' }}>
                         ID Pracownika: {employeeId || 'Nieznane'}
                     </Typography>
+                    <Typography variant="caption" sx={{ color: userRole === 'MANAGER' ? 'primary.main' : 'success.main', fontWeight: 'bold' }}>
+                        Rola: {userRole}
+                    </Typography>
                 </Box>
-                {/* ================================================= */}
                 <Box sx={{ overflow: 'auto' }}>
                     <List>
-                        <ListItem button selected={activeTab === 'mapa'} onClick={() => setActiveTab('mapa')}>
-                            <ListItemIcon><MapIcon color={activeTab === 'mapa' ? 'primary' : 'inherit'} /></ListItemIcon>
-                            <ListItemText primary="Mapa i Stacje" />
-                        </ListItem>
-                        <ListItem button selected={activeTab === 'pojazdy'} onClick={() => setActiveTab('pojazdy')}>
-                            <ListItemIcon><DirectionsCarIcon color={activeTab === 'pojazdy' ? 'primary' : 'inherit'} /></ListItemIcon>
-                            <ListItemText primary="Flota Pojazdów" />
-                        </ListItem>
-                        <ListItem button selected={activeTab === 'trasy'} onClick={() => setActiveTab('trasy')}>
-                            <ListItemIcon><RouteIcon color={activeTab === 'trasy' ? 'primary' : 'inherit'} /></ListItemIcon>
-                            <ListItemText primary="Trasy i Planowanie" />
-                        </ListItem>
+                        {/* WIDOK DLA KIEROWCY */}
+                        {userRole === 'DRIVER' && (
+                            <ListItem button selected={activeTab === 'panel-kierowcy'} onClick={() => setActiveTab('panel-kierowcy')}>
+                                <ListItemIcon><PersonIcon color={activeTab === 'panel-kierowcy' ? 'primary' : 'inherit'} /></ListItemIcon>
+                                <ListItemText primary="Mój Panel" />
+                            </ListItem>
+                        )}
+
+                        {/* WIDOKI DLA MENEDŻERA */}
+                        {userRole === 'MANAGER' && (
+                            <>
+                                <ListItem button selected={activeTab === 'mapa'} onClick={() => setActiveTab('mapa')}>
+                                    <ListItemIcon><MapIcon color={activeTab === 'mapa' ? 'primary' : 'inherit'} /></ListItemIcon>
+                                    <ListItemText primary="Mapa i Stacje" />
+                                </ListItem>
+                                <ListItem button selected={activeTab === 'pojazdy'} onClick={() => setActiveTab('pojazdy')}>
+                                    <ListItemIcon><DirectionsCarIcon color={activeTab === 'pojazdy' ? 'primary' : 'inherit'} /></ListItemIcon>
+                                    <ListItemText primary="Flota Pojazdów" />
+                                </ListItem>
+                                <ListItem button selected={activeTab === 'trasy'} onClick={() => setActiveTab('trasy')}>
+                                    <ListItemIcon><RouteIcon color={activeTab === 'trasy' ? 'primary' : 'inherit'} /></ListItemIcon>
+                                    <ListItemText primary="Trasy i Planowanie" />
+                                </ListItem>
+                            </>
+                        )}
                     </List>
                 </Box>
             </Drawer>
 
             <Box component="main" sx={{ flexGrow: 1, p: 3, display: 'flex', flexDirection: 'column' }}>
                 <Toolbar />
+                {activeTab === 'panel-kierowcy' && renderDriverTab()}
                 {activeTab === 'mapa' && renderMapTab()}
                 {activeTab === 'pojazdy' && renderVehiclesTab()}
                 {activeTab === 'trasy' && renderRoutesTab()}

@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/auth")
 @CrossOrigin(origins = "http://localhost:5173")
@@ -24,5 +26,16 @@ public class AuthenticationController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> authenticate(@RequestBody AuthRequest request) {
         return ResponseEntity.ok(service.authenticate(request));
+    }
+
+    // NOWY ENDPOINT: Odzyskiwanie ID po adresie e-mail
+    @GetMapping("/get-id-by-email")
+    public ResponseEntity<?> getIdByEmail(@RequestParam String email) {
+        try {
+            Long employeeId = service.getIdByEmail(email);
+            return ResponseEntity.ok(Map.of("employeeId", employeeId));
+        } catch (Exception e) {
+            return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
+        }
     }
 }

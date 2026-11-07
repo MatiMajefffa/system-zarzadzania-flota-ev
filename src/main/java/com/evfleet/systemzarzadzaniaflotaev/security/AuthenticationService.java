@@ -55,4 +55,13 @@ public class AuthenticationService {
         var jwtToken = jwtService.generateToken(user);
         return new AuthResponse(jwtToken, user.getId());
     }
+
+    // ==========================================
+    // NOWA METODA: Odzyskiwanie ID po adresie e-mail
+    // ==========================================
+    public Long getIdByEmail(String email) {
+        User user = repository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Nie znaleziono użytkownika o takim adresie e-mail."));
+        return user.getId();
+    }
 }
