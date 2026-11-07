@@ -148,6 +148,7 @@ export default function Dashboard() {
     const [notifications, setNotifications] = useState([]);
     const [selectedVehicle, setSelectedVehicle] = useState(null);
     const [showVehicleDetails, setShowVehicleDetails] = useState(false);
+    const [deleteCode, setDeleteCode] = useState('');
     const [assignRouteDialog, setAssignRouteDialog] = useState({ open: false, driverId: null, start: '', end: '' });
 
     useEffect(() => {
@@ -228,11 +229,19 @@ export default function Dashboard() {
         } catch (err) { console.error(err); }
     };
 
+    // POPRAWIONA WERSJA:
     const fetchDrivers = async () => {
-        setDrivers([
-            { id: 1, firstName: 'Jan', lastName: 'Kowalski', lastRoute: 'Katowice -> Kraków' },
-            { id: 2, firstName: 'Anna', lastName: 'Nowak', lastRoute: 'Gliwice -> Zabrze' }
-        ]);
+        try {
+            const response = await fetch('/api/users/drivers', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setDrivers(data);
+            }
+        } catch (err) {
+            console.error("Błąd pobierania kierowców:", err);
+        }
     };
 
     const fetchNotifications = async () => {
@@ -425,18 +434,37 @@ export default function Dashboard() {
     const handleAddVehicle = async (e) => {
         e.preventDefault(); setLoading(true);
         const payload = {
-            registrationNumber: newVehicle.registrationNumber, model: newVehicle.model,
-            batteryCapacityKWh: parseFloat(newVehicle.batteryCapacityKWh), stateOfCharge: parseInt(newVehicle.stateOfCharge, 10),
-            status: newVehicle.status
+            registrationNumber: newVehicle.registrationNumber,
+            model: newVehicle.model,
+            batteryCapacityKWh: parseFloat(newVehicle.batteryCapacityKWh),
+            stateOfCharge: parseInt(newVehicle.stateOfCharge, 10),
+            status: newVehicle.status,
+            currentBase: newVehicle.currentBase
         };
         try {
-            const res = await fetch('/api/vehicles', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
-            if (res.ok) { showMessage('Dodano pojazd!', 'success'); setShowVehicleForm(false); fetchVehicles(); }
-        } catch (e) { showMessage('Błąd', 'error'); } finally { setLoading(false); }
+            const res = await fetch('/api/vehicles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                showMessage('Dodano pojazd!', 'success');
+                setShowVehicleForm(false);
+                setNewVehicle({ registrationNumber: '', model: '', batteryCapacityKWh: '', stateOfCharge: '', status: 'DOSTEPNY', currentBase: '' });
+                fetchVehicles();
+            } else {
+                showMessage('Błąd podczas dodawania pojazdu.', 'error');
+            }
+        } catch (e) { showMessage('Błąd połączenia z serwerem.', 'error'); } finally { setLoading(false); }
     };
 
     const handleDeleteVehicle = async (id) => {
-        if (!window.confirm("Czy na pewno chcesz trwale usunąć ten pojazd z floty?")) return;
+        if (deleteCode !== '6969') {
+            showMessage('Nieprawidłowy kod usuwania pojazdu!', 'error');
+            return;
+        }
+
+        if (!window.confirm("Czy na pewno chcesz trwale usunąć ten zablokowany pojazd z bazy?")) return;
 
         setLoading(true);
         try {
@@ -447,7 +475,9 @@ export default function Dashboard() {
 
             if (response.ok || response.status === 204) {
                 showMessage(`Pojazd ID: ${id} został usunięty.`, 'success');
-                fetchVehicles(); // Odśwież tabelę
+                setShowVehicleDetails(false);
+                setDeleteCode('');
+                fetchVehicles();
             } else {
                 showMessage('Błąd usuwania pojazdu.', 'error');
             }
@@ -709,8 +739,20 @@ export default function Dashboard() {
                             <Select value={newVehicle.status} label="Status" onChange={(e) => setNewVehicle({...newVehicle, status: e.target.value})}>
                                 <MenuItem value="DOSTEPNY">Dostępny</MenuItem>
                                 <MenuItem value="W_TRASIE">W trasie</MenuItem>
-                                <MenuItem value="LADUJE_SIE">Ładuje się</MenuItem>
+                                <MenuItem value="LADOWANIE">Ładuje się</MenuItem>
                                 <MenuItem value="SERWIS">Serwis</MenuItem>
+                            </Select>
+                        </FormControl>
+                        <FormControl size="small" sx={{ minWidth: 200 }} required>
+                            <InputLabel>Baza / Miejsce postoju</InputLabel>
+                            <Select
+                                value={newVehicle.currentBase}
+                                label="Baza / Miejsce postoju"
+                                onChange={(e) => setNewVehicle({...newVehicle, currentBase: e.target.value})}
+                            >
+                                {bases.map((b) => (
+                                    <MenuItem key={b.id} value={b.name}>{b.name}</MenuItem>
+                                ))}
                             </Select>
                         </FormControl>
                         <Button type="submit" variant="contained" color="success" startIcon={<SaveIcon />} disabled={loading}>Zapisz Pojazd</Button>
@@ -768,10 +810,48 @@ export default function Dashboard() {
                                         label="Wyklucz z algorytmu (Zablokuj)"
                                         sx={{ mt: 2 }}
                                     />
+                                    {/* USUWANIE POJAZDU ZA POMOCĄ KODU (WIDOCZNE PO ZABLOKOWANIU) */}
+                                    {selectedVehicle.isBlocked && (
+                                        <Box sx={{ mt: 3, p: 2, border: '1px dashed #d32f2f', borderRadius: 2, backgroundColor: '#fff5f5' }}>
+                                            <Typography variant="subtitle2" color="error" gutterBottom>
+                                                Strefa niebezpieczna (Usuwanie pojazdu)
+                                            </Typography>
+                                            <TextField
+                                                size="small"
+                                                type="password"
+                                                label="Wpisz kod (np. 1234)"
+                                                value={deleteCode}
+                                                onChange={(e) => setDeleteCode(e.target.value)}
+                                                sx={{ mb: 2, width: '100%', backgroundColor: '#fff' }}
+                                            />
+                                            <Button
+                                                variant="contained"
+                                                color="error"
+                                                startIcon={<DeleteIcon />}
+                                                fullWidth
+                                                onClick={() => handleDeleteVehicle(selectedVehicle.id)}
+                                            >
+                                                Usuń pojazd z bazy
+                                            </Button>
+                                        </Box>
+                                    )}
                                     <Divider sx={{ my: 2 }} />
                                     <Typography variant="h6" color="error">Notatki i Zgłoszenia:</Typography>
                                     <List dense>
-                                        <ListItem><ListItemText primary="Zarysowany zderzak" secondary="Zgłosił: Kierowca #2" /></ListItem>
+                                        {selectedVehicle.reports && selectedVehicle.reports.length > 0 ? (
+                                            selectedVehicle.reports.map((report, index) => (
+                                                <ListItem key={index}>
+                                                    <ListItemText
+                                                        primary={report.description}
+                                                        secondary={`Zgłosił ID pracownika: ${report.employeeId || 'Nieznany'}`}
+                                                    />
+                                                </ListItem>
+                                            ))
+                                        ) : (
+                                            <ListItem>
+                                                <ListItemText primary="Brak zgłoszeń dla tego pojazdu." />
+                                            </ListItem>
+                                        )}
                                     </List>
                                 </Grid>
                                 <Grid item xs={12} md={6}>
@@ -832,29 +912,36 @@ export default function Dashboard() {
                 <Table>
                     <TableHead sx={{ backgroundColor: '#f0f2f5' }}>
                         <TableRow>
-                            <TableCell>ID</TableCell>
-                            <TableCell>Imię i Nazwisko</TableCell>
-                            <TableCell>Ostatnia Trasa</TableCell>
-                            <TableCell align="right">Akcje</TableCell>
+                            <TableCell><strong>ID</strong></TableCell>
+                            <TableCell><strong>Imię i Nazwisko / Email</strong></TableCell>
+                            <TableCell><strong>Ostatnia Trasa</strong></TableCell>
+                            <TableCell align="right"><strong>Akcje</strong></TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {drivers.map((d) => (
-                            <TableRow key={d.id}>
-                                <TableCell>{d.id}</TableCell>
-                                <TableCell>{d.firstName} {d.lastName}</TableCell>
-                                <TableCell>{d.lastRoute}</TableCell>
-                                <TableCell align="right">
-                                    <Button size="small" variant="outlined" startIcon={<AssignmentIcon />} onClick={() => setAssignRouteDialog({ open: true, driverId: d.id, start: '', end: '' })}>
-                                        Zleć Trasę
-                                    </Button>
-                                </TableCell>
+                        {drivers.length === 0 ? (
+                            <TableRow>
+                                <TableCell colSpan={4} align="center">Brak zarejestrowanych kierowców w systemie.</TableCell>
                             </TableRow>
-                        ))}
+                        ) : (
+                            drivers.map((d) => (
+                                <TableRow key={d.id}>
+                                    <TableCell>{d.id}</TableCell>
+                                    <TableCell>{d.firstName ? `${d.firstName} ${d.lastName}` : d.email}</TableCell>
+                                    <TableCell>{d.lastRoute || 'Brak aktywnej trasy'}</TableCell>
+                                    <TableCell align="right">
+                                        <Button size="small" variant="outlined" startIcon={<AssignmentIcon />} onClick={() => setAssignRouteDialog({ open: true, driverId: d.id, start: '', end: '' })}>
+                                            Zleć Trasę
+                                        </Button>
+                                    </TableCell>
+                                </TableRow>
+                            ))
+                        )}
                     </TableBody>
                 </Table>
             </TableContainer>
 
+            {/* Dialog zlecenia trasy bez zmian */}
             <Dialog open={assignRouteDialog.open} onClose={() => setAssignRouteDialog({...assignRouteDialog, open: false})}>
                 <DialogTitle>Zleć trasę kierowcy #{assignRouteDialog.driverId}</DialogTitle>
                 <DialogContent>
