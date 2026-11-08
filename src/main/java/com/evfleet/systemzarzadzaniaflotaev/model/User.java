@@ -39,6 +39,9 @@ public class User implements UserDetails {
     @Column(name = "last_route")
     private String lastRoute;
 
+    @Column(name = "base_id")
+    private Long baseId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;
@@ -65,4 +68,5 @@ public class User implements UserDetails {
 
     @Override
     public boolean isEnabled() { return true; }
+
 }

@@ -646,6 +646,7 @@ export default function Dashboard() {
                             <RoutesView
                                 vehicles={vehicles}
                                 bases={bases}
+                                drivers={drivers}
                                 onRoutePlanned={handlePlanRouteFromBaseAndCargo}
                                 routePath={routePath}
                                 routeWaypoints={routeWaypoints}

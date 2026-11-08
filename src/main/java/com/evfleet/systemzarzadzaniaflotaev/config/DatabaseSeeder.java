@@ -26,8 +26,8 @@ public class DatabaseSeeder implements CommandLineRunner {
 
     private final VehicleRepository vehicleRepository;
     private final BaseLocationRepository baseLocationRepository;
-    private final UserRepository userRepository; // <-- Dodane repozytorium użytkowników
-    private final PasswordEncoder passwordEncoder; // <-- Do szyfrowania haseł
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
     private final ReportRepository reportRepository;
 
     @Override
@@ -37,14 +37,14 @@ public class DatabaseSeeder implements CommandLineRunner {
             System.out.println("✅ Pomyślnie załadowano 10 baz firmowych na Śląsku!");
         }
 
-        // Jeśli w bazie jest mniej niż 30 pojazdów, czyścimy je i wgrywamy nową flotę
+        // Jeśli w bazie jest mniej niż 3 pojazdy, czyścimy je i wgrywamy nową flotę
         if (vehicleRepository.count() < 3) {
-            vehicleRepository.deleteAll(); // Usuwa stare testowe auta
+            vehicleRepository.deleteAll();
             seedVehicles();
             System.out.println("✅ Pomyślnie wyczyszczono i załadowano 30 pojazdów EV do bazy danych!");
         }
 
-        // DODANE: Automatyczne generowanie 20 kierowców (po 2+ na każdą bazę)
+        // Automatyczne generowanie kierowców (po 2+ na każdą bazę)
         if (userRepository.findByRole(Role.DRIVER).size() < 20) {
             seedDrivers();
             System.out.println("✅ Pomyślnie wygenerowano 20 kont kierowców przypisanych do baz na Śląsku!");
@@ -116,7 +116,6 @@ public class DatabaseSeeder implements CommandLineRunner {
             String base = bases[i];
             String platePrefix = plates[i];
 
-            // 1. Auto Osobowe / VIP (Przewóz osób)
             fleet.add(createVehicle(
                     platePrefix + " 1" + i + "00VIP",
                     (String) luxuryCars[i][0],
@@ -126,7 +125,6 @@ public class DatabaseSeeder implements CommandLineRunner {
                     VehicleType.OSOBOWY
             ));
 
-            // 2. Mały Dostawczak (Przewóz małych paczek)
             fleet.add(createVehicle(
                     platePrefix + " 2" + i + "00VAN",
                     (String) smallVans[i][0],
@@ -136,7 +134,6 @@ public class DatabaseSeeder implements CommandLineRunner {
                     VehicleType.MALY_DOSTAWCZAK
             ));
 
-            // 3. Duży Dostawczak (Przewóz dużych paczek)
             fleet.add(createVehicle(
                     platePrefix + " 3" + i + "00TRK",
                     (String) largeVans[i][0],
@@ -160,11 +157,11 @@ public class DatabaseSeeder implements CommandLineRunner {
         v.setIsBlocked(false);
         v.setTotalMileage(mileage);
         v.setCurrentBase(base);
-        v.setVehicleType(type); // <-- Przypisanie typu auta
+        v.setVehicleType(type);
         return v;
     }
 
-    // === NOWA METODA: Generowanie 20 kierowców przypisanych po 2 do każdej z 10 baz ===
+    // === GENEROWANIE 20 KIEROWCÓW Z PRZYPISANYM ID BAZY (baseId) ===
     private void seedDrivers() {
         String[] bases = {
                 "Katowice", "Gliwice", "Zabrze", "Bytom",
@@ -173,22 +170,25 @@ public class DatabaseSeeder implements CommandLineRunner {
         };
 
         List<User> drivers = new ArrayList<>();
-        String encodedPassword = passwordEncoder.encode("0000"); // Uniwersalne hasło dla testów
+        String encodedPassword = passwordEncoder.encode("0000");
 
         int driverCounter = 1;
-        for (String base : bases) {
+        for (int i = 0; i < bases.length; i++) {
+            String baseName = bases[i];
+            Long baseId = (long) (i + 1); // ID bazy od 1 do 10 odpowiadające tabeli bases!
+
             for (int j = 1; j <= 2; j++) {
                 String email = "kierowca" + driverCounter + "@evfleet.com";
 
-                // Sprawdzamy czy użytkownik już istnieje, żeby uniknąć duplikatów
                 if (userRepository.findByEmail(email).isEmpty()) {
                     User driver = User.builder()
                             .firstName("Kierowca" + driverCounter)
-                            .lastName(base) // Nazwisko powiązane z miastem bazy dla łatwiejszej identyfikacji
+                            .lastName(baseName)
                             .email(email)
                             .password(encodedPassword)
                             .role(Role.DRIVER)
-                            .lastRoute("Przypisany do: Baza " + base) // Wstępna informacja o bazie
+                            .baseId(baseId) // <--- TUTAJ ZAPISUJEMY NUMER ID BAZY (1 dla Katowic, 2 dla Gliwic itd.)
+                            .lastRoute("Brak aktywnej trasy")
                             .build();
 
                     drivers.add(driver);
@@ -198,36 +198,5 @@ public class DatabaseSeeder implements CommandLineRunner {
         }
 
         userRepository.saveAll(drivers);
-    }
-
-    private void seedReports() {
-        List<Report> reports = List.of(
-                Report.builder()
-                        .description("🚨 ALARM SOS: Kierowca zgłosił awarię układu napędowego na trasie A4.")
-                        .type("SOS")
-                        .vehicleRegistration("SK 1000VIP")
-                        .employeeId("1001")
-                        .createdAt(LocalDateTime.now().minusMinutes(30))
-                        .status("NOWY")
-                        .build(),
-                Report.builder()
-                        .description("Problem z ładowaniem baterii do 100% na stacji miejskiej w Gliwicach.")
-                        .type("USTERKA")
-                        .vehicleRegistration("SG 2100VAN")
-                        .employeeId("1002")
-                        .createdAt(LocalDateTime.now().minusHours(2))
-                        .status("NOWY")
-                        .build(),
-                Report.builder()
-                        .description("Lekkie obtarcie zderzaka w okolicach prawego reflektora podczas parkowania.")
-                        .type("INFO")
-                        .vehicleRegistration("SZ 3200TRK")
-                        .employeeId("1003")
-                        .createdAt(LocalDateTime.now().minusDays(1))
-                        .status("W_TOKU")
-                        .build()
-        );
-
-        reportRepository.saveAll(reports);
     }
 }

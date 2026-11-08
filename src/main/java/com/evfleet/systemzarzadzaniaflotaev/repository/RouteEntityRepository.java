@@ -1,0 +1,10 @@
+package com.evfleet.systemzarzadzaniaflotaev.repository;
+
+import com.evfleet.systemzarzadzaniaflotaev.model.RouteEntity;
+import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.Optional;
+
+public interface RouteEntityRepository extends JpaRepository<RouteEntity, Long> {
+    // Znajdź ostatnią aktywną/zleconą trasę dla danego pracownika
+    Optional<RouteEntity> findTopByEmployeeIdOrderByIdDesc(String employeeId);
+}
