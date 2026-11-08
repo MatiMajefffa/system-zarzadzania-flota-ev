@@ -8,6 +8,9 @@ import java.util.List;
 
 @Repository
 public interface ReportRepository extends JpaRepository<Report, Long> {
-    // Możesz wyszukiwać zgłoszenia dla konkretnego auta
+    // Wyszukiwanie zgłoszeń dla konkretnego auta
     List<Report> findByVehicleRegistration(String vehicleRegistration);
+
+    // Pobieranie wszystkich zgłoszeń posortowanych od najnowszego do najstarszego
+    List<Report> findAllByOrderByCreatedAtDesc();
 }

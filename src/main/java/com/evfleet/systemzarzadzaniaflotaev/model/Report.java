@@ -27,11 +27,6 @@ public class Report {
     // ID lub numer rejestracyjny samochodu, którego dotyczy zgłoszenie
     private String vehicleRegistration;
 
-    // Opcjonalnie: powiązanie bezpośrednie z encją Vehicle (jeśli wolisz relację)
-    // @ManyToOne
-    // @JoinColumn(name = "vehicle_id")
-    // private Vehicle vehicle;
-
     // Kto zgłosił (np. e-mail lub ID pracownika)
     private String employeeId;
 
@@ -39,7 +34,18 @@ public class Report {
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    // Status (np. "NOWY", "W_TOKU", "ROZWIAZANY")
+    // Status (np. "NOWY", "W_TOKU", "ROZWIAZANY", "ODCZYTANY")
     @Builder.Default
     private String status = "NOWY";
+
+    // Automatyczne ustawienie aktualnej daty oraz domyślnego statusu przed zapisem do bazy
+    @PrePersist
+    public void prePersist() {
+        if (this.createdAt == null) {
+            this.createdAt = LocalDateTime.now();
+        }
+        if (this.status == null || this.status.trim().isEmpty() || this.status.equals("NOWY")) {
+            this.status = "NIEODCZYTANY";
+        }
+    }
 }

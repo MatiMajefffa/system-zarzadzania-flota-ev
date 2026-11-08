@@ -16,11 +16,11 @@ public class ReportController {
 
     private final ReportRepository reportRepository;
 
-    // Pobieranie wszystkich zgłoszeń do panelu menedżera
+    // Pobieranie wszystkich zgłoszeń posortowanych od najnowszego do najstarszego
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<List<Report>> getAllReports() {
-        List<Report> reports = reportRepository.findAll();
+        List<Report> reports = reportRepository.findAllByOrderByCreatedAtDesc();
         return ResponseEntity.ok(reports);
     }
 
@@ -32,7 +32,7 @@ public class ReportController {
         return ResponseEntity.ok(savedReport);
     }
 
-    // Zmiana statusu zgłoszenia (np. z "NOWY" na "ROZWIAZANY")
+    // Zmiana statusu zgłoszenia (np. z "NOWY" na "ODCZYTANY" / "ROZWIAZANY")
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<Report> updateReportStatus(@PathVariable Long id, @RequestParam String status) {
@@ -42,5 +42,16 @@ public class ReportController {
                     return ResponseEntity.ok(reportRepository.save(report));
                 })
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    // Usuwanie powiadomienia po jego odczytaniu lub obsłużeniu
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<Void> deleteReport(@PathVariable Long id) {
+        if (reportRepository.existsById(id)) {
+            reportRepository.deleteById(id);
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.notFound().build();
     }
 }
