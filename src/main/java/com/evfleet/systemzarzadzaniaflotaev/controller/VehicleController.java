@@ -57,9 +57,25 @@ public class VehicleController {
 
     // Usunięcie pojazdu
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<Void> deleteVehicle(@PathVariable Long id) {
         vehicleService.deleteVehicle(id);
         return ResponseEntity.noContent().build();
+    }
+
+    // === NOWE ENDPOINTY ===
+
+    // Blokowanie / Odblokowywanie pojazdu przez menedżera
+    @PutMapping("/{id}/block")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<VehicleDto> toggleBlockVehicle(@PathVariable Long id) {
+        return ResponseEntity.ok(vehicleService.toggleBlockVehicle(id));
+    }
+
+    // Zwrot pojazdu do bazy przez kierowcę po zakończeniu trasy
+    @PostMapping("/{id}/return")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'DRIVER')")
+    public ResponseEntity<VehicleDto> returnVehicle(@PathVariable Long id, @RequestParam String baseName) {
+        return ResponseEntity.ok(vehicleService.returnVehicle(id, baseName));
     }
 }

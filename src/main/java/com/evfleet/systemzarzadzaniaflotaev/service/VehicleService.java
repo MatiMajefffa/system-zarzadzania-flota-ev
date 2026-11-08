@@ -56,6 +56,33 @@ public class VehicleService {
                 .collect(Collectors.toList());
     }
 
+    // === NOWE METODY DLA CYKLU ŻYCIA TRASY ===
+
+    // Zmienia status zablokowania pojazdu (Menedżer)
+    public VehicleDto toggleBlockVehicle(Long id) {
+        Vehicle vehicle = vehicleRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Nie znaleziono pojazdu o ID: " + id));
+
+        // Zabezpieczenie przed nullem, jeśli w bazie było puste pole
+        boolean currentBlockStatus = vehicle.getIsBlocked() != null ? vehicle.getIsBlocked() : false;
+        vehicle.setIsBlocked(!currentBlockStatus);
+
+        Vehicle updatedVehicle = vehicleRepository.save(vehicle);
+        return convertToDto(updatedVehicle);
+    }
+
+    // Zwraca auto do bazy i ustawia je jako dostępne (Kierowca)
+    public VehicleDto returnVehicle(Long id, String baseName) {
+        Vehicle vehicle = vehicleRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Nie znaleziono pojazdu o ID: " + id));
+
+        vehicle.setStatus(VehicleStatus.DOSTEPNY);
+        vehicle.setCurrentBase(baseName);
+
+        Vehicle updatedVehicle = vehicleRepository.save(vehicle);
+        return convertToDto(updatedVehicle);
+    }
+
     // --- Metody pomocnicze do mapowania ---
 
     private VehicleDto convertToDto(Vehicle vehicle) {
@@ -66,6 +93,12 @@ public class VehicleService {
         dto.setBatteryCapacityKWh(vehicle.getBatteryCapacityKWh());
         dto.setStateOfCharge(vehicle.getStateOfCharge());
         dto.setStatus(vehicle.getStatus());
+
+        // Mapowanie nowych pól
+        dto.setIsBlocked(vehicle.getIsBlocked());
+        dto.setTotalMileage(vehicle.getTotalMileage());
+        dto.setCurrentBase(vehicle.getCurrentBase());
+
         return dto;
     }
 
@@ -77,6 +110,12 @@ public class VehicleService {
         vehicle.setBatteryCapacityKWh(dto.getBatteryCapacityKWh());
         vehicle.setStateOfCharge(dto.getStateOfCharge());
         vehicle.setStatus(dto.getStatus());
+
+        // Mapowanie nowych pól
+        vehicle.setIsBlocked(dto.getIsBlocked());
+        vehicle.setTotalMileage(dto.getTotalMileage());
+        vehicle.setCurrentBase(dto.getCurrentBase());
+
         return vehicle;
     }
 }
