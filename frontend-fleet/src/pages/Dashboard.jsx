@@ -501,7 +501,6 @@ export default function Dashboard() {
                 } catch (e) { console.error(e); }
 
                 showMessage('Trasa wyznaczona pomyślnie! Przełączam na mapę.', 'success');
-                setActiveTab('mapa');
                 setTripStage('EN_ROUTE');
                 setIsNavigating(true);
 
@@ -646,8 +645,11 @@ export default function Dashboard() {
                         {activeTab === 'trasy' && (
                             <RoutesView
                                 vehicles={vehicles}
-                                bases={bases} // <--- Przekazujemy listę baz z bazy danych
-                                onRoutePlanned={handlePlanRouteFromBaseAndCargo} // <--- Nowa funkcja obsługująca formularz
+                                bases={bases}
+                                onRoutePlanned={handlePlanRouteFromBaseAndCargo}
+                                routePath={routePath}
+                                routeWaypoints={routeWaypoints}
+                                routeResult={routeResult}
                             />
                         )}
                         {activeTab === 'kierowcy' && (
