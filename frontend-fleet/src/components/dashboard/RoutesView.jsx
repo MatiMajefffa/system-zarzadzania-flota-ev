@@ -20,21 +20,20 @@ export default function RoutesView({ bases = [], onRoutePlanned }) {
                     🧭 Planowanie Trasy i Nawigacja Floty EV
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                    Wybierz bazę początkową, rodzaj ładunku (system dobierze odpowiedni pojazd elektryczny) oraz cel podróży.
+                    Wybierz bazę startową, rodzaj ładunku (system dobierze pojazd) oraz cel podróży.
                 </Typography>
 
                 <Divider sx={{ mb: 3 }} />
 
                 <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
 
-                    {/* 1. Wybór bazy startowej z pobranych z bazy */}
+                    {/* Wybór bazy startowej */}
                     <TextField
                         select
                         label="Baza startowa"
                         value={startBase}
                         onChange={(e) => setStartBase(e.target.value)}
                         required
-                        helperText="Wybierz bazę, z której rusza pojazd"
                     >
                         {bases.map((base, index) => (
                             <MenuItem key={index} value={base.name || base}>
@@ -43,24 +42,23 @@ export default function RoutesView({ bases = [], onRoutePlanned }) {
                         ))}
                     </TextField>
 
-                    {/* 2. Wybór rodzaju ładunku / przeznaczenia */}
+                    {/* Wybór rodzaju ładunku / typu pojazdu */}
                     <TextField
                         select
                         label="Rodzaj ładunku / przeznaczenia"
                         value={cargoType}
                         onChange={(e) => setCargoType(e.target.value)}
                         required
-                        helperText="System automatycznie dobierze odpowiedni typ auta z bazy"
                     >
                         <MenuItem value="OSOBOWY">🚗 Przewóz osób (Auta osobowe / VIP)</MenuItem>
                         <MenuItem value="MALY_DOSTAWCZAK">📦 Przewóz małych paczek (Małe vany)</MenuItem>
-                        <MenuItem value="DUZY_DOSTAWCZAK">🚛 Przewóz dużych paczek (Duże vany / Trasy)</MenuItem>
+                        <MenuItem value="DUZY_DOSTAWCZAK">🚛 Przewóz dużych paczek (Duże vany)</MenuItem>
                     </TextField>
 
-                    {/* 3. Miejsce docelowe */}
+                    {/* Miejsce docelowe */}
                     <TextField
                         label="Miejsce docelowe"
-                        placeholder="np. Warszawa, ul. Marszałkowska lub Gliwice"
+                        placeholder="np. Warszawa, ul. Marszałkowska"
                         value={destination}
                         onChange={(e) => setDestination(e.target.value)}
                         required

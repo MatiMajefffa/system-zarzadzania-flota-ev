@@ -431,6 +431,90 @@ export default function Dashboard() {
         } catch (err) { showMessage('Błąd połączenia.', 'error'); } finally { setLoading(false); }
     };
 
+    const handlePlanRouteFromBaseAndCargo = async (formData) => {
+        // formData zawiera: { startBase, cargoType, destination }
+        if (!formData.startBase || !formData.cargoType || !formData.destination) {
+            return showMessage('Wypełnij wszystkie pola formularza trasy.', 'warning');
+        }
+        setLoading(true);
+        setRouteResult(null);
+        setRoutePath([]);
+        setRouteWaypoints({ start: null, end: null, stops: [] });
+
+        try {
+            // 1. Geokodowanie miejsca docelowego
+            const endRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(formData.destination + ', Polska')}&limit=1`);
+            const endData = await endRes.json();
+
+            if (!endData.length) {
+                setLoading(false);
+                return showMessage('Nie znaleziono podanego miejsca docelowego.', 'error');
+            }
+
+            const endLat = parseFloat(endData[0].lat);
+            const endLon = parseFloat(endData[0].lon);
+
+            // 2. Pobranie współrzędnych wybranej bazy startowej
+            const selectedBaseObj = bases.find(b => (b.name || b) === formData.startBase);
+            let startLat = 50.2649, startLon = 19.0238; // Domyślnie Katowice
+
+            if (selectedBaseObj && selectedBaseObj.latitude && selectedBaseObj.longitude) {
+                startLat = selectedBaseObj.latitude;
+                startLon = selectedBaseObj.longitude;
+            } else {
+                const startRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(formData.startBase + ', Polska')}&limit=1`);
+                const startData = await startRes.json();
+                if (startData.length) {
+                    startLat = parseFloat(startData[0].lat);
+                    startLon = parseFloat(startData[0].lon);
+                }
+            }
+
+            // 3. Wywołanie endpointu backendowego z uwzględnieniem bazy oraz typu pojazdu (cargoType)
+            const url = `/api/routes/plan-auto?startLon=${startLon}&startLat=${startLat}&endLon=${endLon}&endLat=${endLat}&baseName=${encodeURIComponent(formData.startBase)}&vehicleType=${formData.cargoType}&temperature=15.0`;
+
+            const response = await fetch(url, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (!data.energyRequiredKWh) data.energyRequiredKWh = (data.distanceKm || 50) * 0.18;
+                if (!data.vehicleRangeKm) data.vehicleRangeKm = 300;
+
+                setRouteResult(data);
+                const stops = (data.chargingStops || []).map(s => ({ lat: s.latitude, lng: s.longitude, name: s.stationName }));
+                setRouteWaypoints({
+                    start: { lat: startLat, lng: startLon, name: formData.startBase },
+                    end: { lat: endLat, lng: endLon, name: formData.destination },
+                    stops
+                });
+
+                // Pobranie geometrii trasy z OSRM
+                try {
+                    const osrmCoords = [`${startLon},${startLat}`, ...stops.map(s => `${s.lng},${s.lat}`), `${endLon},${endLat}`].join(';');
+                    const osrmRes = await fetch(`https://router.project-osrm.org/route/v1/driving/${osrmCoords}?overview=full&geometries=geojson`);
+                    const osrmData = await osrmRes.json();
+                    if (osrmData.routes?.length > 0) {
+                        setRoutePath(osrmData.routes[0].geometry.coordinates.map(c => [c[1], c[0]]));
+                    }
+                } catch (e) { console.error(e); }
+
+                showMessage('Trasa wyznaczona pomyślnie! Przełączam na mapę.', 'success');
+                setActiveTab('mapa');
+                setTripStage('EN_ROUTE');
+                setIsNavigating(true);
+
+            } else {
+                showMessage('Brak dostępnych pojazdów tego typu w wybranej bazie.', 'error');
+            }
+        } catch (err) {
+            console.error(err);
+            showMessage('Błąd podczas wyznaczania trasy.', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
     const handleCalculateRoute = async () => {
         if (!routeForm.vehicleId || !routeForm.startAddress || !routeForm.endAddress) return showMessage('Wypełnij pola', 'warning');
         setLoading(true);
@@ -560,7 +644,11 @@ export default function Dashboard() {
                             />
                         )}
                         {activeTab === 'trasy' && (
-                            <RoutesView vehicles={vehicles} routeForm={routeForm} setRouteForm={setRouteForm} handleCalculateRoute={handleCalculateRoute} />
+                            <RoutesView
+                                vehicles={vehicles}
+                                bases={bases} // <--- Przekazujemy listę baz z bazy danych
+                                onRoutePlanned={handlePlanRouteFromBaseAndCargo} // <--- Nowa funkcja obsługująca formularz
+                            />
                         )}
                         {activeTab === 'kierowcy' && (
                             <DriversView drivers={drivers} assignRouteDialog={assignRouteDialog} setAssignRouteDialog={setAssignRouteDialog} handleAssignRouteToDriver={handleAssignRouteToDriver} />
