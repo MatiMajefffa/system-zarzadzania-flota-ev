@@ -1,9 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import {
-    Box, TextField, Button, MenuItem, Typography, Paper, Alert, Divider,
+    Box, TextField, Button, MenuItem, Typography, Paper, Alert, Divider, Chip,
     TableContainer, Table, TableHead, TableRow, TableCell, TableBody
 } from '@mui/material';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+
+function RouteStatusChip({ route }) {
+    if (route.status === 'ZLECONA') return <Chip size="small" color="warning" label="Oczekuje na rozpoczęcie" />;
+    if (route.arrivedAt) return <Chip size="small" color="info" label="Powrót do bazy" />;
+    return <Chip size="small" color="success" label="W trasie" />;
+}
 
 export default function RoutesView({
                                        bases = [],
@@ -39,6 +45,9 @@ export default function RoutesView({
 
     useEffect(() => {
         fetchActiveRoutes();
+        // Statusy zmieniają kierowcy, więc lista odświeża się sama
+        const intervalId = setInterval(fetchActiveRoutes, 15000);
+        return () => clearInterval(intervalId);
     }, []);
 
     const getDriverLabel = (employeeId) => {
@@ -325,7 +334,7 @@ export default function RoutesView({
                                         <TableCell>{getDriverLabel(route.employeeId)}</TableCell>
                                         <TableCell>{route.startAddress} → {route.endAddress}</TableCell>
                                         <TableCell>{route.vehicleRegistrationNumber}</TableCell>
-                                        <TableCell>{route.status}</TableCell>
+                                        <TableCell><RouteStatusChip route={route} /></TableCell>
                                         <TableCell align="right">
                                             {route.status === 'ZLECONA' && (
                                                 <Button size="small" color="error" variant="outlined" onClick={() => handleCancelRoute(route.id)}>

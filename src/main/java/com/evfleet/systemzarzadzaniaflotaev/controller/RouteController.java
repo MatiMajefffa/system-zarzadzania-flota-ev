@@ -2,6 +2,7 @@ package com.evfleet.systemzarzadzaniaflotaev.controller;
 
 import com.evfleet.systemzarzadzaniaflotaev.dto.RouteHistoryDto;
 import com.evfleet.systemzarzadzaniaflotaev.model.DriverNotification;
+import com.evfleet.systemzarzadzaniaflotaev.model.Report;
 import com.evfleet.systemzarzadzaniaflotaev.model.Role;
 import com.evfleet.systemzarzadzaniaflotaev.model.RouteEntity;
 import com.evfleet.systemzarzadzaniaflotaev.model.User;
@@ -9,6 +10,7 @@ import com.evfleet.systemzarzadzaniaflotaev.model.Vehicle;
 import com.evfleet.systemzarzadzaniaflotaev.model.VehicleStatus;
 import com.evfleet.systemzarzadzaniaflotaev.model.VehicleType;
 import com.evfleet.systemzarzadzaniaflotaev.repository.DriverNotificationRepository;
+import com.evfleet.systemzarzadzaniaflotaev.repository.ReportRepository;
 import com.evfleet.systemzarzadzaniaflotaev.repository.RouteEntityRepository;
 import com.evfleet.systemzarzadzaniaflotaev.repository.UserRepository;
 import com.evfleet.systemzarzadzaniaflotaev.repository.VehicleRepository;
@@ -39,6 +41,7 @@ public class RouteController {
     private final RouteEntityRepository routeEntityRepository; // Repozytorium do zapisu trwałych tras
     private final DriverNotificationRepository driverNotificationRepository;
     private final UserRepository userRepository;
+    private final ReportRepository reportRepository;
 
     // Klasa DTO do żądania przypisania trasy kierowcy
     @Getter
@@ -200,6 +203,7 @@ public class RouteController {
 
         route.setStatus(RouteEntity.STATUS_IN_PROGRESS);
         route.setStartedAt(LocalDateTime.now());
+        notifyManagers(route, "Rozpoczęto trasę " + describeRoute(route));
         return ResponseEntity.ok(routeEntityRepository.save(route));
     }
 
@@ -217,6 +221,7 @@ public class RouteController {
         }
 
         route.setArrivedAt(LocalDateTime.now());
+        notifyManagers(route, "Dotarcie do celu na trasie " + describeRoute(route));
         return ResponseEntity.ok(routeEntityRepository.save(route));
     }
 
@@ -257,7 +262,24 @@ public class RouteController {
 
         releaseVehicle(route, route.getReturnBaseName());
         route.setStatus(RouteEntity.STATUS_FINISHED);
+        notifyManagers(route, "Pojazd wrócił do bazy " + route.getReturnBaseName() + " po trasie " + describeRoute(route));
         return ResponseEntity.ok(routeEntityRepository.save(route));
+    }
+
+    private static String describeRoute(RouteEntity route) {
+        return route.getStartAddress() + " → " + route.getEndAddress();
+    }
+
+    // Powiadomienia menedżera to zgłoszenia, które pokazuje panel "Powiadomienia"
+    private void notifyManagers(RouteEntity route, String event) {
+        User driver = SecurityUtils.getCurrentUser();
+        String driverName = driver.getFirstName() + " " + driver.getLastName() + " (ID: " + driver.getId() + ")";
+        reportRepository.save(Report.builder()
+                .description(event + ". Kierowca: " + driverName)
+                .type("STATUS_TRASY")
+                .employeeId(route.getEmployeeId())
+                .vehicleRegistration(route.getVehicleRegistrationNumber())
+                .build());
     }
 
     // Menedżer anuluje zlecenie, którego kierowca jeszcze nie rozpoczął
