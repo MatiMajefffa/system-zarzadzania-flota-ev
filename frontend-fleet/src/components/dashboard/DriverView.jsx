@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
+import WarningIcon from '@mui/icons-material/Warning';
+import ReportDialog from './ReportDialog';
 import {
     Box, Typography, Button, Paper, Alert, Grid,
     TableContainer, Table, TableHead, TableRow, TableCell, TableBody
@@ -18,11 +20,12 @@ const formatDuration = (minutes) => {
 export default function DriverView({
                                        message, setMessage, tripStage, lastRoute, routeHistory,
                                        routeResult, photos, handlePhotoUpload,
-                                       isNavigating, setIsNavigating, handleFinishRoute, handleReturnVehicle,
+                                       handleFinishRoute, handleReturnVehicle,
                                        currentLocation, routeWaypoints, routePath,
-                                       handleSOS, carIcon, RouteBoundsController, NavigationController,
+                                       handleSOS, carIcon, RouteBoundsController,
                                        newRouteNotification, onOpenNotifications, handleStartAssignedRoute, handleOpenNavigation
                                    }) {
+    const [showReportDialog, setShowReportDialog] = useState(false);
     const assignedRoute = lastRoute?.status === 'ZLECONA' ? lastRoute : null;
 
     return (
@@ -40,12 +43,29 @@ export default function DriverView({
 
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Typography variant="h5" fontWeight="bold">Panel Kierowcy - Zlecenia i Trasy</Typography>
-                {tripStage === 'EN_ROUTE' && (
-                    <Button variant="contained" color="error" size="large" startIcon={<LocalHospitalIcon />} onClick={handleSOS} sx={{ animation: 'pulse 2s infinite' }}>
-                        SOS - WEZWIJ POMOC
-                    </Button>
-                )}
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {(tripStage === 'EN_ROUTE' || tripStage === 'RETURNING_TO_BASE') && (
+                        <Button variant="contained" color="warning" size="large" startIcon={<WarningIcon />} onClick={() => setShowReportDialog(true)}>
+                            Zgłoś problem
+                        </Button>
+                    )}
+                    {tripStage === 'EN_ROUTE' && (
+                        <Button variant="contained" color="error" size="large" startIcon={<LocalHospitalIcon />} onClick={handleSOS} sx={{ animation: 'pulse 2s infinite' }}>
+                            SOS - WEZWIJ POMOC
+                        </Button>
+                    )}
+                </Box>
             </Box>
+
+            {showReportDialog && (
+                <ReportDialog
+                    onClose={() => setShowReportDialog(false)}
+                    onSent={() => {
+                        setShowReportDialog(false);
+                        setMessage({ text: 'Zgłoszenie wysłane. Znajdziesz je w zakładce Zgłoszenia.', type: 'success' });
+                    }}
+                />
+            )}
 
             {tripStage === 'IDLE' && (
                 <Grid container spacing={3}>
@@ -157,16 +177,6 @@ export default function DriverView({
                                 <Button variant="contained" color="success" size="large" startIcon={<MapIcon />} onClick={handleOpenNavigation} disabled={!routeWaypoints.start}>
                                     Otwórz trasę w Google Maps
                                 </Button>
-                                <Button
-                                    variant="contained"
-                                    color={isNavigating ? "secondary" : "info"}
-                                    size="large"
-                                    startIcon={<NavigationIcon />}
-                                    onClick={() => setIsNavigating(!isNavigating)}
-                                    sx={{ minWidth: 250 }}
-                                >
-                                    {isNavigating ? "Zatrzymaj Nawigację" : "Uruchom Nawigację (GPS)"}
-                                </Button>
                                 <Button variant="contained" color="primary" size="large" onClick={handleFinishRoute}>
                                     Zgłoś dojazd do celu
                                 </Button>
@@ -192,8 +202,7 @@ export default function DriverView({
                         <Box sx={{ height: 450, width: '100%', borderRadius: 2, overflow: 'hidden', border: '1px solid #ccc', position: 'relative' }}>
                             <MapContainer center={[routeWaypoints.start.lat, routeWaypoints.start.lng]} zoom={10} style={{ height: '100%', width: '100%' }}>
                                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                {!isNavigating && <RouteBoundsController waypoints={routeWaypoints} />}
-                                <NavigationController position={currentLocation} isNavigating={isNavigating} />
+                                <RouteBoundsController waypoints={routeWaypoints} />
 
                                 <Marker position={[routeWaypoints.start.lat, routeWaypoints.start.lng]}><Popup>Start</Popup></Marker>
                                 <Marker position={[routeWaypoints.end.lat, routeWaypoints.end.lng]}><Popup>Cel</Popup></Marker>
@@ -205,7 +214,7 @@ export default function DriverView({
 
                                 {currentLocation && (
                                     <Marker position={[currentLocation.lat, currentLocation.lng]} icon={carIcon}>
-                                        <Popup>Twoja aktualna pozycja</Popup>
+                                        <Popup>Twoja pozycja (symulacja)</Popup>
                                     </Marker>
                                 )}
 

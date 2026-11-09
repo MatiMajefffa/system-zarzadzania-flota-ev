@@ -67,9 +67,12 @@ public class RouteService {
                     .body(RouteResponseDto.class);
 
             if (response != null && response.getRoutes() != null && !response.getRoutes().isEmpty()) {
+                ensureInsideServiceArea(response);
                 return response.getRoutes().get(0);
             }
             throw new RuntimeException("Nie udało się wyznaczyć trasy z przystankiem.");
+        } catch (RouteNotFeasibleException e) {
+            throw e;
         } catch (Exception e) {
             throw new RuntimeException("Błąd komunikacji z serwerem OSRM (Waypoint): " + e.getMessage(), e);
         }

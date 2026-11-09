@@ -74,16 +74,6 @@ function RouteBoundsController({ waypoints }) {
     return null;
 }
 
-function NavigationController({ position, isNavigating }) {
-    const map = useMap();
-    useEffect(() => {
-        if (isNavigating && position) {
-            map.setView([position.lat, position.lng], 16, { animate: true });
-        }
-    }, [position, isNavigating, map]);
-    return null;
-}
-
 const getRoleFromToken = (token) => {
     if (!token) return 'DRIVER';
     try {
@@ -112,7 +102,7 @@ const buildGoogleMapsUrl = (origin, destination, stops = []) => {
     return `https://www.google.com/maps/dir/?${params}`;
 };
 
-const getDriverLocation = () => new Promise((resolve) => {
+const requestLocation = (enableHighAccuracy) => new Promise((resolve) => {
     if (!('geolocation' in navigator)) {
         resolve(null);
         return;
@@ -120,9 +110,12 @@ const getDriverLocation = () => new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
         (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
         () => resolve(null),
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 30000 }
+        { enableHighAccuracy, timeout: 5000, maximumAge: 30000 }
     );
 });
+
+// Komputery bez GPS często nie odpowiadają na tryb wysokiej dokładności, więc jest druga próba
+const getDriverLocation = async () => (await requestLocation(true)) ?? requestLocation(false);
 
 const getRouteStops = ({ chargingStops }) =>
     chargingStops.map(stop => ({ lat: stop.latitude, lng: stop.longitude, name: stop.name }));
@@ -160,7 +153,6 @@ export default function Dashboard() {
     const [photos, setPhotos] = useState({ pickup: null, dropoff: null });
 
     const [currentLocation, setCurrentLocation] = useState(null);
-    const [isNavigating, setIsNavigating] = useState(false);
 
     const [drivers, setDrivers] = useState([]);
     const [notifications, setNotifications] = useState([]);
@@ -189,25 +181,25 @@ export default function Dashboard() {
         }
     }, [token, userRole]);
 
+    // Kierowca widzi tę samą trasę i symulowaną pozycję co menedżer
     useEffect(() => {
-        let watchId;
-        if (isNavigating && 'geolocation' in navigator) {
-            watchId = navigator.geolocation.watchPosition(
-                (pos) => {
-                    setCurrentLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-                },
-                (err) => {
-                    console.error("Błąd lokalizacji GPS:", err);
-                    showMessage("Nie udało się pobrać lokalizacji GPS.", "error");
-                    setIsNavigating(false);
-                },
-                { enableHighAccuracy: true, maximumAge: 5000, timeout: 5000 }
-            );
-        }
-        return () => {
-            if (watchId) navigator.geolocation.clearWatch(watchId);
+        const routeId = routeResult?.assignedRouteId;
+        const isTracked = tripStage === 'EN_ROUTE' || tripStage === 'RETURNING_TO_BASE';
+        if (userRole !== 'DRIVER' || !routeId || !isTracked) return undefined;
+
+        const refreshTracking = async () => {
+            try {
+                const response = await fetch(`/api/routes/${routeId}/tracking`, { headers: { Authorization: `Bearer ${token}` } });
+                if (!response.ok) return;
+                const { position, path } = await response.json();
+                setCurrentLocation({ lat: position.latitude, lng: position.longitude });
+                setRoutePath(previous => (previous.length === path.length ? previous : path));
+            } catch (err) { console.error(err); }
         };
-    }, [isNavigating]);
+        refreshTracking();
+        const intervalId = setInterval(refreshTracking, 5000);
+        return () => clearInterval(intervalId);
+    }, [routeResult?.assignedRouteId, tripStage, userRole, token]);
 
     // Menedżer widzi postępy kierowców, a kierowca nowe zlecenia i wiadomości bez odświeżania strony
     useEffect(() => {
@@ -317,7 +309,7 @@ export default function Dashboard() {
         } catch (err) { console.error(err); }
     };
 
-    const loadAssignedRoute = async (route, stage) => {
+    const loadAssignedRoute = (route, stage) => {
         const hasCoordinates = route.startLat != null && route.endLat != null;
         const start = { lat: route.startLat, lng: route.startLng, name: route.startAddress };
         const end = { lat: route.endLat, lng: route.endLng, name: route.endAddress };
@@ -335,27 +327,6 @@ export default function Dashboard() {
         setRoutePath([]);
         setRouteWaypoints(hasCoordinates ? { start, end, stops } : { start: null, end: null, stops: [] });
         setTripStage(stage);
-
-        if (hasCoordinates) drawRouteFromCurrentLocation(stage, { start, end, stops });
-    };
-
-    // Trasa na mapie zaczyna się tam, gdzie jest kierowca; bez GPS od punktu z planu
-    const drawRouteFromCurrentLocation = async (stage, { start, end, stops }) => {
-        const location = await getDriverLocation();
-        if (location) {
-            setCurrentLocation(location);
-            setRouteWaypoints(prev => ({ ...prev, origin: location }));
-        }
-
-        const points = stage === 'RETURNING_TO_BASE' ? [location ?? end, start] : [location ?? start, ...stops, end];
-        try {
-            const osrmCoords = points.map(p => `${p.lng},${p.lat}`).join(';');
-            const osrmRes = await fetch(`https://router.project-osrm.org/route/v1/driving/${osrmCoords}?overview=full&geometries=geojson`);
-            const osrmData = await osrmRes.json();
-            if (osrmData.routes?.length > 0) {
-                setRoutePath(osrmData.routes[0].geometry.coordinates.map(c => [c[1], c[0]]));
-            }
-        } catch (e) { console.error(e); }
     };
 
     const handleStartAssignedRoute = (route) => {
@@ -376,12 +347,16 @@ export default function Dashboard() {
 
     const handlePhotoUpload = async (e, type) => {
         const file = e.target.files[0];
+        let startLocation = null;
 
-        // Zdjęcie przy odbiorze rozpoczyna zleconą trasę
+        // Zdjęcie przy odbiorze rozpoczyna zleconą trasę z miejsca, w którym jest kierowca
         if (type === 'pickup') {
             try {
+                startLocation = await getDriverLocation();
                 const response = await fetch(`/api/routes/${routeResult.assignedRouteId}/start`, {
-                    method: 'POST', headers: { Authorization: `Bearer ${token}` }
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ latitude: startLocation?.lat, longitude: startLocation?.lng })
                 });
                 if (!response.ok) {
                     showMessage(await response.text(), 'error');
@@ -402,8 +377,13 @@ export default function Dashboard() {
         }
 
         setPhotos({ ...photos, [type]: file });
-        showMessage(`Zdjęcie (${type === 'pickup' ? 'Odbiór' : 'Zwrot'}) zapisane lokalnie.`, 'success');
+        if (type === 'pickup' && !startLocation) {
+            showMessage('Nie udało się pobrać Twojej lokalizacji, więc trasa startuje z bazy. Sprawdź zgodę na lokalizację w przeglądarce.', 'warning', 10000);
+        } else {
+            showMessage(`Zdjęcie (${type === 'pickup' ? 'Odbiór' : 'Zwrot'}) zapisane lokalnie.`, 'success');
+        }
         if (type === 'pickup') {
+            if (startLocation) setRouteWaypoints(previous => ({ ...previous, origin: startLocation }));
             setTripStage('EN_ROUTE');
             handleOpenNavigation();
         }
@@ -431,9 +411,8 @@ export default function Dashboard() {
             });
             if (!response.ok) return showMessage(await response.text(), 'error');
 
-            setIsNavigating(false);
+            setRoutePath([]);
             setTripStage('RETURNING_TO_BASE');
-            if (routeWaypoints.start) drawRouteFromCurrentLocation('RETURNING_TO_BASE', routeWaypoints);
             showMessage(`Osiągnięto cel! Udaj się do bazy: ${routeResult?.returnBaseName || 'Katowice'}`, 'info');
         } catch (err) {
             console.error(err);
@@ -453,6 +432,7 @@ export default function Dashboard() {
                 showMessage('Pojazd zwrócony!', 'success');
                 setTripStage('IDLE');
                 setRouteResult(null);
+                setCurrentLocation(null);
                 setPhotos({ pickup: null, dropoff: null });
                 fetchLastRoute();
                 fetchRouteHistory();
@@ -777,10 +757,10 @@ export default function Dashboard() {
                                 message={message} setMessage={setMessage} tripStage={tripStage} lastRoute={lastRoute}
                                 routeHistory={routeHistory}
                                 routeResult={routeResult} photos={photos} handlePhotoUpload={handlePhotoUpload}
-                                isNavigating={isNavigating} setIsNavigating={setIsNavigating} handleFinishRoute={handleFinishRoute}
+                                handleFinishRoute={handleFinishRoute}
                                 handleReturnVehicle={handleReturnVehicle} currentLocation={currentLocation} routeWaypoints={routeWaypoints}
                                 routePath={routePath}
-                                handleSOS={handleSOS} carIcon={carIcon} RouteBoundsController={RouteBoundsController} NavigationController={NavigationController}
+                                handleSOS={handleSOS} carIcon={carIcon} RouteBoundsController={RouteBoundsController}
                                 newRouteNotification={unreadDriverNotifications[0]} onOpenNotifications={() => setActiveTab('powiadomienia')}
                                 handleStartAssignedRoute={handleStartAssignedRoute}
                                 handleOpenNavigation={handleOpenNavigation}

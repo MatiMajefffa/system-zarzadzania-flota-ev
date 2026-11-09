@@ -34,32 +34,65 @@ public class RouteTrackingService {
                                     int progressPercent, String stationName) {
     }
 
+    public record RouteTracking(SimulatedPosition position, List<double[]> path) {
+    }
+
     private final RouteService routeService;
 
     // Ile razy symulowany przejazd biegnie szybciej niż w rzeczywistości
     @Value("${application.simulation.driving-speed}")
     private double drivingSpeed;
 
-    // Zapisuje przebieg trasy w chwili rozpoczęcia; brak mapy nie może blokować kierowcy
-    public void recordPlannedPath(RouteEntity route) {
+    // Trasa zaczyna się w miejscu kierowcy; gdy jest nieznane lub poza mapą, startuje z bazy
+    public void recordOutboundPath(RouteEntity route, Double driverLatitude, Double driverLongitude) {
         if (route.getStartLat() == null || route.getEndLat() == null) {
             return;
         }
 
+        boolean startedFromDriver = driverLatitude != null && driverLongitude != null
+                && storePath(route, outboundPoints(route, driverLongitude, driverLatitude));
+        if (!startedFromDriver) {
+            storePath(route, outboundPoints(route, route.getStartLng(), route.getStartLat()));
+        }
+    }
+
+    // Po dojeździe symulacja prowadzi z celu do bazy
+    public void recordReturnPath(RouteEntity route) {
+        if (route.getStartLat() == null || route.getEndLat() == null) {
+            return;
+        }
+        if (!storePath(route, List.of(new double[]{route.getEndLng(), route.getEndLat()}, new double[]{route.getStartLng(), route.getStartLat()}))) {
+            route.setPathGeometry(null);
+        }
+    }
+
+    private List<double[]> outboundPoints(RouteEntity route, double originLon, double originLat) {
         List<double[]> points = new ArrayList<>();
-        points.add(new double[]{route.getStartLng(), route.getStartLat()});
+        points.add(new double[]{originLon, originLat});
         route.getChargingStops().forEach(stop -> points.add(new double[]{stop.getLongitude(), stop.getLatitude()}));
         points.add(new double[]{route.getEndLng(), route.getEndLat()});
+        return points;
+    }
 
+    // Brak mapy nie może blokować kierowcy, więc błąd oznacza tylko brak podglądu pozycji
+    private boolean storePath(RouteEntity route, List<double[]> points) {
         try {
             RouteResponseDto.Route path = routeService.getRouteThroughPoints(points);
             route.setPathGeometry(path.getGeometry().getCoordinates().stream()
                     .map(point -> String.format(Locale.US, "%.6f,%.6f", point.get(0), point.get(1)))
                     .collect(Collectors.joining(";")));
             route.setPlannedDurationSeconds(path.getDuration());
+            return true;
         } catch (RuntimeException e) {
             log.warn("Nie udało się zapisać przebiegu trasy {}: {}", route.getId(), e.getMessage());
+            return false;
         }
+    }
+
+    // Przebieg trasy jako punkty [szerokość, długość] i aktualna pozycja dla panelu kierowcy
+    public Optional<RouteTracking> getTracking(RouteEntity route, LocalDateTime now) {
+        return getPosition(route, now).map(position -> new RouteTracking(position,
+                parseLine(route.getPathGeometry()).stream().map(point -> new double[]{point[1], point[0]}).toList()));
     }
 
     public Optional<SimulatedPosition> getPosition(RouteEntity route, LocalDateTime now) {
@@ -103,10 +136,9 @@ public class RouteTrackingService {
 
     private SimulatedPosition returnPosition(RouteEntity route, List<double[]> line, double[] kmAlongLine, LocalDateTime now) {
         double fraction = simulatedSeconds(route.getArrivedAt(), now) / route.getPlannedDurationSeconds();
-        if (fraction >= 1) {
-            return position(route, line, kmAlongLine, 0, 100, Phase.W_BAZIE);
-        }
-        return position(route, line, kmAlongLine, 1 - fraction, (int) Math.round(fraction * 100), Phase.POWROT);
+        return fraction >= 1
+                ? position(route, line, kmAlongLine, 1, Phase.W_BAZIE, null)
+                : position(route, line, kmAlongLine, fraction, Phase.POWROT, null);
     }
 
     private double simulatedSeconds(LocalDateTime from, LocalDateTime now) {
@@ -116,11 +148,6 @@ public class RouteTrackingService {
     private SimulatedPosition position(RouteEntity route, List<double[]> line, double[] kmAlongLine, double fraction, Phase phase, String stationName) {
         double[] point = pointAt(line, kmAlongLine, fraction);
         return new SimulatedPosition(route.getId(), point[1], point[0], phase, (int) Math.round(fraction * 100), stationName);
-    }
-
-    private SimulatedPosition position(RouteEntity route, List<double[]> line, double[] kmAlongLine, double fraction, int progress, Phase phase) {
-        double[] point = pointAt(line, kmAlongLine, fraction);
-        return new SimulatedPosition(route.getId(), point[1], point[0], phase, progress, null);
     }
 
     private double[] pointAt(List<double[]> line, double[] kmAlongLine, double fraction) {

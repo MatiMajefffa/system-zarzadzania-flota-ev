@@ -197,11 +197,25 @@ public class RouteController {
                 .toList());
     }
 
+    // Trasa i symulowana pozycja dla panelu kierowcy
+    @GetMapping("/{id}/tracking")
+    @PreAuthorize("hasRole('DRIVER')")
+    public ResponseEntity<RouteTrackingService.RouteTracking> getRouteTracking(@PathVariable Long id) {
+        return findOwnRoute(id)
+                .filter(route -> RouteEntity.STATUS_IN_PROGRESS.equals(route.getStatus()))
+                .flatMap(route -> routeTrackingService.getTracking(route, LocalDateTime.now()))
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    public record StartRouteRequest(Double latitude, Double longitude) {
+    }
+
     // Kierowca odebrał pojazd i rozpoczyna zleconą trasę
     @PostMapping("/{id}/start")
     @PreAuthorize("hasRole('DRIVER')")
     @Transactional
-    public ResponseEntity<?> startRoute(@PathVariable Long id) {
+    public ResponseEntity<?> startRoute(@PathVariable Long id, @RequestBody(required = false) StartRouteRequest request) {
         RouteEntity route = findOwnRoute(id).orElse(null);
         if (route == null) {
             return ResponseEntity.notFound().build();
@@ -217,7 +231,7 @@ public class RouteController {
         vehicle.setStatus(VehicleStatus.W_TRASIE);
         vehicleRepository.save(vehicle);
 
-        routeTrackingService.recordPlannedPath(route);
+        routeTrackingService.recordOutboundPath(route, request != null ? request.latitude() : null, request != null ? request.longitude() : null);
         route.setStatus(RouteEntity.STATUS_IN_PROGRESS);
         route.setStartedAt(LocalDateTime.now());
         notifyManagers(route, "Rozpoczęto trasę " + describeRoute(route));
@@ -244,6 +258,7 @@ public class RouteController {
             vehicleRepository.save(vehicle);
         });
 
+        routeTrackingService.recordReturnPath(route);
         route.setArrivedAt(LocalDateTime.now());
         notifyManagers(route, "Dotarcie do celu na trasie " + describeRoute(route));
         return ResponseEntity.ok(routeEntityRepository.save(route));
