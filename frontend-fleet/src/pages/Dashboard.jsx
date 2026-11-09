@@ -127,7 +127,7 @@ export default function Dashboard() {
     const [routeWaypoints, setRouteWaypoints] = useState({ start: null, end: null, stops: [] });
 
     const [lastRoute, setLastRoute] = useState(null);
-    const [driverNavForm, setDriverNavForm] = useState({ startAddress: '', endAddress: '' });
+    const [routeHistory, setRouteHistory] = useState([]);
     const [reportForm, setReportForm] = useState({ description: '' });
     const [tripStage, setTripStage] = useState('IDLE');
     const [photos, setPhotos] = useState({ pickup: null, dropoff: null });
@@ -155,6 +155,7 @@ export default function Dashboard() {
                 fetchNotifications();
             } else {
                 fetchLastRoute();
+                fetchRouteHistory();
                 fetchDriverNotifications();
             }
         }
@@ -248,8 +249,15 @@ export default function Dashboard() {
                 const route = await response.json();
                 setLastRoute(route);
                 // Etap podróży jest tylko w pamięci, więc po odświeżeniu strony odtwarzamy go z bazy
-                if (route.status === 'W_TRAKCIE') loadAssignedRoute(route, 'EN_ROUTE');
+                if (route.status === 'W_TRAKCIE') loadAssignedRoute(route, route.arrivedAt ? 'RETURNING_TO_BASE' : 'EN_ROUTE');
             }
+        } catch (err) { console.error(err); }
+    };
+
+    const fetchRouteHistory = async () => {
+        try {
+            const response = await fetch('/api/routes/history', { headers: { Authorization: `Bearer ${token}` } });
+            if (response.ok) setRouteHistory(await response.json());
         } catch (err) { console.error(err); }
     };
 
@@ -290,63 +298,11 @@ export default function Dashboard() {
         showMessage('Odbierz pojazd z bazy i dodaj zdjęcie, aby rozpocząć trasę.', 'info');
     };
 
-    const handleAutoAssignRoute = async () => {
-        if (!driverNavForm.startAddress || !driverNavForm.endAddress) return showMessage('Wpisz punkt startowy i docelowy.', 'warning');
-        setLoading(true);
-        setRouteResult(null); setRoutePath([]); setRouteWaypoints({ start: null, end: null, stops: [] });
-        setIsNavigating(false);
-        setCurrentLocation(null);
-
-        try {
-            const startRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(driverNavForm.startAddress + ', Polska')}&limit=1`);
-            const startData = await startRes.json();
-            const endRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(driverNavForm.endAddress + ', Polska')}&limit=1`);
-            const endData = await endRes.json();
-
-            if (!startData.length || !endData.length) {
-                setLoading(false); return showMessage('Nie znaleziono jednego z adresów.', 'error');
-            }
-
-            const startLat = parseFloat(startData[0].lat), startLon = parseFloat(startData[0].lon);
-            const endLat = parseFloat(endData[0].lat), endLon = parseFloat(endData[0].lon);
-
-            const url = `/api/routes/plan-auto?startLon=${startLon}&startLat=${startLat}&endLon=${endLon}&endLat=${endLat}&temperature=15.0`;
-            const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-
-            if (response.ok) {
-                const data = await response.json();
-                if (!data.energyRequiredKWh) data.energyRequiredKWh = (data.distanceKm || 50) * 0.18;
-
-                setRouteResult(data);
-                const stops = getRouteStops(data);
-                setRouteWaypoints({
-                    start: { lat: startLat, lng: startLon, name: driverNavForm.startAddress },
-                    end: { lat: endLat, lng: endLon, name: driverNavForm.endAddress },
-                    stops
-                });
-
-                try {
-                    const osrmCoords = [`${startLon},${startLat}`, ...stops.map(s => `${s.lng},${s.lat}`), `${endLon},${endLat}`].join(';');
-                    const osrmRes = await fetch(`https://router.project-osrm.org/route/v1/driving/${osrmCoords}?overview=full&geometries=geojson`);
-                    const osrmData = await osrmRes.json();
-                    if (osrmData.routes?.length > 0) {
-                        setRoutePath(osrmData.routes[0].geometry.coordinates.map(c => [c[1], c[0]]));
-                    }
-                } catch (e) { console.error(e); }
-
-                showMessage('Przydzielono pojazd! Rozpocznij procedurę odbioru.', 'success');
-                setTripStage('PICKUP');
-            } else {
-                showMessage(`Brak dostępnych pojazdów w bazach.`, 'error');
-            }
-        } catch (err) { showMessage('Błąd serwera.', 'error'); } finally { setLoading(false); }
-    };
-
     const handlePhotoUpload = async (e, type) => {
         const file = e.target.files[0];
 
         // Zdjęcie przy odbiorze rozpoczyna zleconą trasę
-        if (type === 'pickup' && routeResult?.assignedRouteId) {
+        if (type === 'pickup') {
             try {
                 const response = await fetch(`/api/routes/${routeResult.assignedRouteId}/start`, {
                     method: 'POST', headers: { Authorization: `Bearer ${token}` }
@@ -389,21 +345,27 @@ export default function Dashboard() {
         } catch (err) { showMessage('Błąd wysyłania alarmu SOS.', 'error'); } finally { setLoading(false); }
     };
 
-    const handleFinishRoute = () => {
-        setIsNavigating(false);
-        setTripStage('RETURNING_TO_BASE');
-        showMessage(`Osiągnięto cel! Udaj się do bazy: ${routeResult?.returnBaseName || 'Katowice'}`, 'info');
+    const handleFinishRoute = async () => {
+        try {
+            const response = await fetch(`/api/routes/${routeResult.assignedRouteId}/arrive`, {
+                method: 'POST', headers: { Authorization: `Bearer ${token}` }
+            });
+            if (!response.ok) return showMessage(await response.text(), 'error');
+
+            setIsNavigating(false);
+            setTripStage('RETURNING_TO_BASE');
+            showMessage(`Osiągnięto cel! Udaj się do bazy: ${routeResult?.returnBaseName || 'Katowice'}`, 'info');
+        } catch (err) {
+            console.error(err);
+            showMessage('Błąd połączenia. Spróbuj ponownie.', 'error');
+        }
     };
 
     const handleReturnVehicle = async () => {
         if (!photos.dropoff) return showMessage('Musisz załączyć zdjęcie po zwrocie pojazdu!', 'warning');
         setLoading(true);
         try {
-            const baseName = routeResult?.returnBaseName || 'Katowice';
-            const url = routeResult.assignedRouteId
-                ? `/api/routes/${routeResult.assignedRouteId}/finish`
-                : `/api/vehicles/${routeResult.assignedVehicleId}/return?baseName=${encodeURIComponent(baseName)}`;
-            const response = await fetch(url, {
+            const response = await fetch(`/api/routes/${routeResult.assignedRouteId}/finish`, {
                 method: 'POST', headers: { Authorization: `Bearer ${token}` }
             });
 
@@ -412,8 +374,8 @@ export default function Dashboard() {
                 setTripStage('IDLE');
                 setRouteResult(null);
                 setPhotos({ pickup: null, dropoff: null });
-                setDriverNavForm({ startAddress: '', endAddress: '' });
                 fetchLastRoute();
+                fetchRouteHistory();
             } else {
                 showMessage(await response.text() || 'Nie udało się zwrócić pojazdu.', 'error');
             }
@@ -698,7 +660,7 @@ export default function Dashboard() {
                         {activeTab === 'panel-kierowcy' && (
                             <DriverView
                                 message={message} setMessage={setMessage} tripStage={tripStage} lastRoute={lastRoute}
-                                driverNavForm={driverNavForm} setDriverNavForm={setDriverNavForm} handleAutoAssignRoute={handleAutoAssignRoute}
+                                routeHistory={routeHistory}
                                 loading={loading} routeResult={routeResult} photos={photos} handlePhotoUpload={handlePhotoUpload}
                                 isNavigating={isNavigating} setIsNavigating={setIsNavigating} handleFinishRoute={handleFinishRoute}
                                 handleReturnVehicle={handleReturnVehicle} currentLocation={currentLocation} routeWaypoints={routeWaypoints}
