@@ -3,7 +3,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
     Box, Drawer, AppBar, Toolbar, Typography, Button, List,
-    ListItem, ListItemIcon, ListItemText, Badge
+    ListItem, ListItemIcon, ListItemText, Badge, IconButton
 } from '@mui/material';
 import MapIcon from '@mui/icons-material/Map';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
@@ -181,7 +181,17 @@ export default function Dashboard() {
         };
     }, [isNavigating]);
 
+    // Menedżer na bieżąco dostaje informacje o postępach kierowców
+    useEffect(() => {
+        if (userRole !== 'MANAGER' || !token || token === 'undefined' || token === 'null') return undefined;
+        const intervalId = setInterval(fetchNotifications, 15000);
+        return () => clearInterval(intervalId);
+    }, [token, userRole]);
+
     const unreadDriverNotifications = driverNotifications.filter(n => n.status === 'NIEODCZYTANY');
+    const unreadCount = userRole === 'MANAGER'
+        ? notifications.filter(n => !n.status || ['NIEODCZYTANY', 'NOWY'].includes(n.status.toUpperCase())).length
+        : unreadDriverNotifications.length;
 
     const handleLogout = () => {
         localStorage.removeItem('token');
@@ -586,6 +596,19 @@ export default function Dashboard() {
             <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, backgroundColor: '#1e293b' }}>
                 <Toolbar>
                     <Typography variant="h6" noWrap sx={{ flexGrow: 1 }}>System Zarządzania Flotą EV</Typography>
+                    <IconButton color="inherit" aria-label="Powiadomienia" title="Powiadomienia" onClick={() => setActiveTab('powiadomienia')} sx={{ mr: 1 }}>
+                        <Badge badgeContent={unreadCount} color="error">
+                            <NotificationsIcon sx={unreadCount > 0 ? {
+                                color: '#facc15',
+                                '@keyframes bell-glow': {
+                                    '0%, 100%': { filter: 'drop-shadow(0 0 1px #facc15)' },
+                                    '50%': { filter: 'drop-shadow(0 0 8px #facc15)' }
+                                },
+                                animation: 'bell-glow 1.5s ease-in-out infinite',
+                                '@media (prefers-reduced-motion: reduce)': { animation: 'none', filter: 'drop-shadow(0 0 4px #facc15)' }
+                            } : undefined} />
+                        </Badge>
+                    </IconButton>
                     <Button color="inherit" onClick={handleLogout} startIcon={<LogoutIcon />}>Wyloguj</Button>
                 </Toolbar>
             </AppBar>
@@ -624,7 +647,7 @@ export default function Dashboard() {
                             <>
                                 <ListItem button selected={activeTab === 'powiadomienia'} onClick={() => setActiveTab('powiadomienia')}>
                                     <ListItemIcon>
-                                        <Badge badgeContent={notifications.filter(n => n.type === 'SOS').length} color="error">
+                                        <Badge badgeContent={unreadCount} color="error">
                                             <NotificationsIcon color={activeTab === 'powiadomienia' ? 'primary' : 'inherit'} />
                                         </Badge>
                                     </ListItemIcon>
@@ -726,7 +749,7 @@ export default function Dashboard() {
                             <DriversView drivers={drivers} assignRouteDialog={assignRouteDialog} setAssignRouteDialog={setAssignRouteDialog} handleAssignRouteToDriver={handleAssignRouteToDriver} />
                         )}
                         {activeTab === 'powiadomienia' && (
-                            <NotificationsView notifications={notifications} />
+                            <NotificationsView notifications={notifications} onChanged={fetchNotifications} />
                         )}
                     </>
                 )}
