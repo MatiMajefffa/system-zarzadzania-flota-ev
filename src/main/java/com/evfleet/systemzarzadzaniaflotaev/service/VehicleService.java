@@ -1,8 +1,10 @@
 package com.evfleet.systemzarzadzaniaflotaev.service;
 
 import com.evfleet.systemzarzadzaniaflotaev.dto.VehicleDto;
+import com.evfleet.systemzarzadzaniaflotaev.model.RouteEntity;
 import com.evfleet.systemzarzadzaniaflotaev.model.Vehicle;
 import com.evfleet.systemzarzadzaniaflotaev.model.VehicleStatus;
+import com.evfleet.systemzarzadzaniaflotaev.repository.RouteEntityRepository;
 import com.evfleet.systemzarzadzaniaflotaev.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -16,6 +18,7 @@ import java.util.stream.Collectors;
 public class VehicleService {
 
     private final VehicleRepository vehicleRepository;
+    private final RouteEntityRepository routeRepository;
 
     // Pobranie wszystkich pojazdów jako DTO
     public List<VehicleDto> getAllVehicles() {
@@ -75,6 +78,11 @@ public class VehicleService {
     public VehicleDto returnVehicle(Long id, String baseName) {
         Vehicle vehicle = vehicleRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Nie znaleziono pojazdu o ID: " + id));
+
+        // Pojazd zarezerwowany pod zlecenie zwalnia się tylko przez zakończenie lub anulowanie tej trasy
+        if (routeRepository.existsByVehicleIdAndStatusIn(id, RouteEntity.ACTIVE_STATUSES)) {
+            return convertToDto(vehicle);
+        }
 
         vehicle.setStatus(VehicleStatus.DOSTEPNY);
         vehicle.setCurrentBase(baseName);

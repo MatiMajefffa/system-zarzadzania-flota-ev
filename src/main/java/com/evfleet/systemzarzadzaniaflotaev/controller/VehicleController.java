@@ -72,9 +72,9 @@ public class VehicleController {
         return ResponseEntity.ok(vehicleService.toggleBlockVehicle(id));
     }
 
-    // Zwrot pojazdu do bazy przez kierowcę po zakończeniu trasy
+    // Ręczny zwrot pojazdu do bazy; kierowca zwraca pojazd przez zakończenie zleconej trasy
     @PostMapping("/{id}/return")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'DRIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<VehicleDto> returnVehicle(@PathVariable Long id, @RequestParam String baseName) {
         return ResponseEntity.ok(vehicleService.returnVehicle(id, baseName));
     }
