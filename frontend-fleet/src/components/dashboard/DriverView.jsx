@@ -63,6 +63,11 @@ export default function DriverView({
                                         <Typography variant="body2"><b>Pojazd:</b> {assignedRoute.vehicleRegistrationNumber || 'Przydzielony'}</Typography>
                                         <Typography variant="body2"><b>Dystans:</b> {assignedRoute.distanceKm ? assignedRoute.distanceKm.toFixed(2) : '?'} km</Typography>
                                         <Typography variant="body2"><b>Wymagana energia:</b> {assignedRoute.energyRequiredKWh ? assignedRoute.energyRequiredKWh.toFixed(1) : '?'} kWh</Typography>
+                                        {assignedRoute.chargingStops.map((stop, index) => (
+                                            <Typography key={`${stop.name}-${index}`} variant="body2">
+                                                <b>Postój {index + 1}:</b> {stop.name}, ładowanie ok. {Math.ceil(stop.chargingMinutes)} min
+                                            </Typography>
+                                        ))}
                                         <Button variant="contained" startIcon={<NavigationIcon />} onClick={() => handleStartAssignedRoute(assignedRoute)} sx={{ mt: 1 }}>
                                             Rozpocznij trasę
                                         </Button>
@@ -186,6 +191,11 @@ export default function DriverView({
 
                                 <Marker position={[routeWaypoints.start.lat, routeWaypoints.start.lng]}><Popup>Start</Popup></Marker>
                                 <Marker position={[routeWaypoints.end.lat, routeWaypoints.end.lng]}><Popup>Cel</Popup></Marker>
+                                {routeWaypoints.stops.map((stop, index) => (
+                                    <Marker key={`stop-${index}`} position={[stop.lat, stop.lng]}>
+                                        <Popup>Postój ładowania {index + 1}: {stop.name}</Popup>
+                                    </Marker>
+                                ))}
 
                                 {currentLocation && (
                                     <Marker position={[currentLocation.lat, currentLocation.lng]} icon={carIcon}>

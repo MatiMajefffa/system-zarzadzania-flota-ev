@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Entity
@@ -39,9 +40,11 @@ public class RouteEntity {
     private Double startLng;
     private Double endLat;
     private Double endLng;
-    private Double chargingStopLat;
-    private Double chargingStopLng;
-    private String chargingStopName;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "route_charging_stops", joinColumns = @JoinColumn(name = "route_id"))
+    @OrderColumn(name = "stop_order")
+    private List<RouteChargingStop> chargingStops = new ArrayList<>();
 
     private String status = STATUS_ASSIGNED;
     private LocalDateTime createdAt = LocalDateTime.now();

@@ -95,9 +95,8 @@ const getRoleFromToken = (token) => {
     }
 };
 
-// Backend zwraca pojedynczą stację ładowania, a mapa operuje na liście przystanków
-const getRouteStops = ({ selectedChargingStation: station }) =>
-    station ? [{ lat: station.latitude, lng: station.longitude, name: station.name }] : [];
+const getRouteStops = ({ chargingStops }) =>
+    chargingStops.map(stop => ({ lat: stop.latitude, lng: stop.longitude, name: stop.name }));
 
 export default function Dashboard() {
     const token = localStorage.getItem('token');
@@ -294,9 +293,7 @@ export default function Dashboard() {
         const hasCoordinates = route.startLat != null && route.endLat != null;
         const start = { lat: route.startLat, lng: route.startLng, name: route.startAddress };
         const end = { lat: route.endLat, lng: route.endLng, name: route.endAddress };
-        const stops = route.chargingStopLat != null
-            ? [{ lat: route.chargingStopLat, lng: route.chargingStopLng, name: route.chargingStopName }]
-            : [];
+        const stops = route.chargingStops.map(stop => ({ lat: stop.latitude, lng: stop.longitude, name: stop.name }));
 
         setRouteResult({
             assignedRouteId: route.id,
@@ -465,9 +462,7 @@ export default function Dashboard() {
                     startLng: routeWaypoints.start?.lng,
                     endLat: routeWaypoints.end?.lat,
                     endLng: routeWaypoints.end?.lng,
-                    chargingStopLat: routeWaypoints.stops?.[0]?.lat,
-                    chargingStopLng: routeWaypoints.stops?.[0]?.lng,
-                    chargingStopName: routeWaypoints.stops?.[0]?.name
+                    chargingStops: routeResult.chargingStops
                 })
             });
             if (!response.ok) return await response.text();
@@ -618,7 +613,7 @@ export default function Dashboard() {
 
                 showMessage('Trasa wyznaczona pomyślnie!', 'success');
             } else {
-                showMessage('Brak dostępnych pojazdów tego typu w wybranej bazie.', 'error');
+                showMessage(response.status === 400 ? await response.text() : 'Nie udało się wyznaczyć trasy.', 'error');
             }
         } catch (err) {
             console.error(err);

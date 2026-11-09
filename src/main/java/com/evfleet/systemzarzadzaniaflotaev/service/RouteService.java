@@ -3,7 +3,9 @@ package com.evfleet.systemzarzadzaniaflotaev.service;
 import com.evfleet.systemzarzadzaniaflotaev.dto.RouteResponseDto;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 @Service
 public class RouteService {
@@ -35,11 +37,13 @@ public class RouteService {
     }
 
     /**
-     * Wyznacza trasę z punktem pośrednim (przystankiem na stacji ładowania): Start -> Stacja -> Cel
+     * Wyznacza trasę przez przystanki ładowania; punkty podawane jako [długość, szerokość]
      */
-    public RouteResponseDto.Route getRouteWithWaypoint(double startLon, double startLat, double stationLon, double stationLat, double endLon, double endLat) {
-        String url = String.format(Locale.US, "%s/route/v1/driving/%.6f,%.6f;%.6f,%.6f;%.6f,%.6f?geometries=geojson&overview=full",
-                OSRM_URL, startLon, startLat, stationLon, stationLat, endLon, endLat);
+    public RouteResponseDto.Route getRouteThroughPoints(List<double[]> points) {
+        String coordinates = points.stream()
+                .map(point -> String.format(Locale.US, "%.6f,%.6f", point[0], point[1]))
+                .collect(Collectors.joining(";"));
+        String url = String.format("%s/route/v1/driving/%s?geometries=geojson&overview=full", OSRM_URL, coordinates);
 
         try {
             RouteResponseDto response = restClient.get()

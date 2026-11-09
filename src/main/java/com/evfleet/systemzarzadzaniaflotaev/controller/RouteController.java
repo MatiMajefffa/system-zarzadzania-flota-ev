@@ -4,6 +4,7 @@ import com.evfleet.systemzarzadzaniaflotaev.dto.RouteHistoryDto;
 import com.evfleet.systemzarzadzaniaflotaev.model.DriverNotification;
 import com.evfleet.systemzarzadzaniaflotaev.model.Report;
 import com.evfleet.systemzarzadzaniaflotaev.model.Role;
+import com.evfleet.systemzarzadzaniaflotaev.model.RouteChargingStop;
 import com.evfleet.systemzarzadzaniaflotaev.model.RouteEntity;
 import com.evfleet.systemzarzadzaniaflotaev.model.User;
 import com.evfleet.systemzarzadzaniaflotaev.model.Vehicle;
@@ -64,9 +65,7 @@ public class RouteController {
         private Double startLng;
         private Double endLat;
         private Double endLng;
-        private Double chargingStopLat;
-        private Double chargingStopLng;
-        private String chargingStopName;
+        private List<RouteChargingStop> chargingStops;
     }
 
     // 1. Stary endpoint (po konkretnym ID pojazdu)
@@ -162,9 +161,9 @@ public class RouteController {
         route.setStartLng(request.getStartLng());
         route.setEndLat(request.getEndLat());
         route.setEndLng(request.getEndLng());
-        route.setChargingStopLat(request.getChargingStopLat());
-        route.setChargingStopLng(request.getChargingStopLng());
-        route.setChargingStopName(request.getChargingStopName());
+        if (request.getChargingStops() != null) {
+            route.setChargingStops(request.getChargingStops());
+        }
         route.setStatus(RouteEntity.STATUS_ASSIGNED);
 
         routeEntityRepository.save(route);
@@ -226,8 +225,9 @@ public class RouteController {
         }
 
         double temperature = weatherService.getCurrentTemperature(route.getEndLat(), route.getEndLng());
+        double chargedKWh = route.getChargingStops().stream().mapToDouble(RouteChargingStop::getChargeKWh).sum();
         vehicleRepository.findByIdForUpdate(route.getVehicleId()).ifPresent(vehicle -> {
-            batterySimulationService.applyDrive(vehicle, route.getDistanceKm(), temperature, route.getChargingStopLat() != null);
+            batterySimulationService.applyDrive(vehicle, route.getDistanceKm(), temperature, chargedKWh);
             vehicleRepository.save(vehicle);
         });
 
@@ -274,7 +274,7 @@ public class RouteController {
         // Powrót do bazy liczony jako ten sam dystans co trasa
         double temperature = weatherService.getCurrentTemperature(route.getStartLat(), route.getStartLng());
         vehicleRepository.findByIdForUpdate(route.getVehicleId()).ifPresent(vehicle -> {
-            batterySimulationService.applyDrive(vehicle, route.getDistanceKm(), temperature, false);
+            batterySimulationService.applyDrive(vehicle, route.getDistanceKm(), temperature, 0);
             if (StringUtils.hasText(route.getReturnBaseName())) {
                 vehicle.setCurrentBase(route.getReturnBaseName());
             }

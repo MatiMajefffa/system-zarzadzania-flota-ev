@@ -26,4 +26,9 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errors);
     }
+
+    @ExceptionHandler(RouteNotFeasibleException.class)
+    public ResponseEntity<String> handleRouteNotFeasible(RouteNotFeasibleException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
+    }
 }
