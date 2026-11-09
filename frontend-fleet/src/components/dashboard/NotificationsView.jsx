@@ -77,7 +77,7 @@ export default function NotificationsView({
                     return (
                         <Alert
                             key={n.id || i}
-                            severity={n.type === 'SOS' ? 'error' : 'info'}
+                            severity={n.type === 'SOS' ? 'error' : n.type === 'WAZNA_WIADOMOSC' ? 'warning' : 'info'}
                             sx={{
                                 fontSize: '1.1rem',
                                 alignItems: 'center',

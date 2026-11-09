@@ -1,15 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
-    Box, TextField, Button, MenuItem, Typography, Paper, Alert, Divider, Chip,
+    Box, TextField, Button, MenuItem, Typography, Paper, Alert, Divider,
     TableContainer, Table, TableHead, TableRow, TableCell, TableBody
 } from '@mui/material';
+import RouteStatusChip from './RouteStatusChip';
+import RoutePlanDetails from './RoutePlanDetails';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
-
-function RouteStatusChip({ route }) {
-    if (route.status === 'ZLECONA') return <Chip size="small" color="warning" label="Oczekuje na rozpoczęcie" />;
-    if (route.arrivedAt) return <Chip size="small" color="info" label="Powrót do bazy" />;
-    return <Chip size="small" color="success" label="W trasie" />;
-}
 
 export default function RoutesView({
                                        bases = [],
@@ -20,7 +16,9 @@ export default function RoutesView({
                                        routeResult = null,
                                        message = { text: '', type: 'info' },
                                        setMessage,
-                                       onRouteAssigned
+                                       activeRoutes = [],
+                                       onActiveRoutesChanged,
+                                       onAssignRoute
                                    }) {
     const [startBase, setStartBase] = useState('');
     const [cargoType, setCargoType] = useState('');
@@ -30,25 +28,6 @@ export default function RoutesView({
     const [assigning, setAssigning] = useState(false);
     // Znacznik jest częścią trasy w Dashboard, bo ten komponent jest odmontowywany przy zmianie zakładki
     const isRouteAssigned = Boolean(routeResult?.assigned);
-    const [activeRoutes, setActiveRoutes] = useState([]);
-
-    const fetchActiveRoutes = async () => {
-        try {
-            const response = await fetch('/api/routes/active', {
-                headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-            });
-            if (response.ok) setActiveRoutes(await response.json());
-        } catch (err) {
-            console.error(err);
-        }
-    };
-
-    useEffect(() => {
-        fetchActiveRoutes();
-        // Statusy zmieniają kierowcy, więc lista odświeża się sama
-        const intervalId = setInterval(fetchActiveRoutes, 15000);
-        return () => clearInterval(intervalId);
-    }, []);
 
     const getDriverLabel = (employeeId) => {
         const driver = drivers.find(d => String(d.id) === String(employeeId));
@@ -66,7 +45,7 @@ export default function RoutesView({
             } else {
                 setLocalMessage({ text: `Nie udało się anulować zlecenia: ${await response.text()}`, type: 'error' });
             }
-            fetchActiveRoutes();
+            onActiveRoutesChanged?.();
         } catch (err) {
             console.error(err);
             setLocalMessage({ text: 'Błąd połączenia z serwerem.', type: 'error' });
@@ -133,48 +112,11 @@ export default function RoutesView({
         }
 
         setAssigning(true);
-        try {
-            const token = localStorage.getItem('token');
-            const response = await fetch('/api/routes/assign-to-driver', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    employeeId: String(selectedDriver),
-                    vehicleId: routeResult.assignedVehicleId,
-                    vehicleRegistrationNumber: routeResult.vehicleRegistrationNumber,
-                    // Adresy z wyznaczonej trasy, bo pola formularza mogły się od tego czasu zmienić
-                    startAddress: routeWaypoints.start?.name,
-                    endAddress: routeWaypoints.end?.name,
-                    distanceKm: routeResult.distanceKm,
-                    energyRequiredKWh: routeResult.energyRequiredKWh,
-                    vehicleRangeKm: routeResult.vehicleRangeKm,
-                    returnBaseName: routeResult.returnBaseName,
-                    startLat: routeWaypoints.start?.lat,
-                    startLng: routeWaypoints.start?.lng,
-                    endLat: routeWaypoints.end?.lat,
-                    endLng: routeWaypoints.end?.lng,
-                    chargingStopLat: routeWaypoints.stops?.[0]?.lat,
-                    chargingStopLng: routeWaypoints.stops?.[0]?.lng,
-                    chargingStopName: routeWaypoints.stops?.[0]?.name
-                })
-            });
-
-            if (response.ok) {
-                onRouteAssigned?.();
-                fetchActiveRoutes();
-                setLocalMessage({ text: `Trasa została zlecona kierowcy (ID: ${selectedDriver}). Otrzyma powiadomienie po zalogowaniu.`, type: 'success' });
-            } else {
-                const errText = await response.text();
-                setLocalMessage({ text: `Błąd podczas zlecania trasy: ${errText}`, type: 'error' });
-            }
-        } catch (err) {
-            setLocalMessage({ text: 'Błąd połączenia z serwerem.', type: 'error' });
-        } finally {
-            setAssigning(false);
-        }
+        const error = await onAssignRoute(selectedDriver);
+        setAssigning(false);
+        setLocalMessage(error
+            ? { text: `Błąd podczas zlecania trasy: ${error}`, type: 'error' }
+            : { text: `Trasa została zlecona kierowcy: ${getDriverLabel(selectedDriver)}.`, type: 'success' });
     };
 
     const centerLat = routeWaypoints.start?.lat || 50.2649;
@@ -294,9 +236,7 @@ export default function RoutesView({
                                 <Typography variant="subtitle1" fontWeight="bold" color="success.main" gutterBottom>
                                     ✅ Trasa wyznaczona pomyślnie
                                 </Typography>
-                                <Typography variant="body2"><b>Dystans:</b> {routeResult.distanceKm?.toFixed(1)} km</Typography>
-                                <Typography variant="body2"><b>Energia:</b> {routeResult.energyRequiredKWh?.toFixed(1) || '10.0'} kWh</Typography>
-                                <Typography variant="body2"><b>Pojazd:</b> {routeResult.vehicleRegistrationNumber || 'Dobrany automatycznie'}</Typography>
+                                <RoutePlanDetails route={routeResult} />
                             </Box>
 
                             <Button
