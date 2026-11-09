@@ -660,7 +660,7 @@ export default function Dashboard() {
     };
 
     return (
-        <Box sx={{ display: 'flex', height: '100vh', backgroundColor: '#f4f6f9' }}>
+        <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f4f6f9' }}>
             <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, backgroundColor: '#1e293b' }}>
                 <Toolbar>
                     <Typography variant="h6" noWrap sx={{ flexGrow: 1 }}>System Zarządzania Flotą EV</Typography>
@@ -747,7 +747,7 @@ export default function Dashboard() {
                 </Box>
             </Drawer>
 
-            <Box component="main" sx={{ flexGrow: 1, p: 3, display: 'flex', flexDirection: 'column' }}>
+            <Box component="main" sx={{ flexGrow: 1, minWidth: 0, p: 3, display: 'flex', flexDirection: 'column' }}>
                 <Toolbar />
 
                 {userRole === 'DRIVER' && (
