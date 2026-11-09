@@ -45,4 +45,6 @@ public class RouteEntity {
 
     private String status = STATUS_ASSIGNED;
     private LocalDateTime createdAt = LocalDateTime.now();
+    private LocalDateTime startedAt; // Odbiór pojazdu
+    private LocalDateTime arrivedAt; // Dojazd do celu
 }

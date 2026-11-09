@@ -1,5 +1,6 @@
 package com.evfleet.systemzarzadzaniaflotaev.controller;
 
+import com.evfleet.systemzarzadzaniaflotaev.dto.RouteHistoryDto;
 import com.evfleet.systemzarzadzaniaflotaev.model.DriverNotification;
 import com.evfleet.systemzarzadzaniaflotaev.model.Role;
 import com.evfleet.systemzarzadzaniaflotaev.model.RouteEntity;
@@ -22,6 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -61,6 +64,7 @@ public class RouteController {
 
     // 1. Stary endpoint (po konkretnym ID pojazdu)
     @GetMapping("/plan")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<RoutePlanningService.RoutePlanResult> planRoute(
             @RequestParam Long vehicleId,
             @RequestParam double startLon,
@@ -77,6 +81,7 @@ public class RouteController {
 
     // 2. NOWY endpoint: automatyczny dobór pojazdu na podstawie bazy i typu ładunku
     @GetMapping("/plan-auto")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<?> planRouteAuto(
             @RequestParam double startLon,
             @RequestParam double startLat,
@@ -194,7 +199,44 @@ public class RouteController {
         vehicleRepository.save(vehicle);
 
         route.setStatus(RouteEntity.STATUS_IN_PROGRESS);
+        route.setStartedAt(LocalDateTime.now());
         return ResponseEntity.ok(routeEntityRepository.save(route));
+    }
+
+    // Kierowca dojechał do celu - tu kończy się mierzony czas przejazdu
+    @PostMapping("/{id}/arrive")
+    @PreAuthorize("hasRole('DRIVER')")
+    @Transactional
+    public ResponseEntity<?> arriveAtDestination(@PathVariable Long id) {
+        RouteEntity route = findOwnRoute(id).orElse(null);
+        if (route == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (!RouteEntity.STATUS_IN_PROGRESS.equals(route.getStatus()) || route.getArrivedAt() != null) {
+            return ResponseEntity.status(409).body("Nie można zgłosić dojazdu dla tej trasy.");
+        }
+
+        route.setArrivedAt(LocalDateTime.now());
+        return ResponseEntity.ok(routeEntityRepository.save(route));
+    }
+
+    // Ostatnie zakończone trasy zalogowanego kierowcy
+    @GetMapping("/history")
+    @PreAuthorize("hasRole('DRIVER')")
+    public ResponseEntity<List<RouteHistoryDto>> getRouteHistory() {
+        String employeeId = String.valueOf(SecurityUtils.getCurrentUserId());
+        List<RouteHistoryDto> history = routeEntityRepository
+                .findTop10ByEmployeeIdAndStatusOrderByIdDesc(employeeId, RouteEntity.STATUS_FINISHED).stream()
+                .map(route -> new RouteHistoryDto(route.getId(), route.getStartAddress(), route.getEndAddress(), getDurationMinutes(route)))
+                .toList();
+        return ResponseEntity.ok(history);
+    }
+
+    private static Long getDurationMinutes(RouteEntity route) {
+        if (route.getStartedAt() == null || route.getArrivedAt() == null) {
+            return null;
+        }
+        return Duration.between(route.getStartedAt(), route.getArrivedAt()).toMinutes();
     }
 
     // Kierowca zwrócił pojazd do bazy - zakończenie trasy zwalnia rezerwację
@@ -208,6 +250,9 @@ public class RouteController {
         }
         if (!RouteEntity.STATUS_IN_PROGRESS.equals(route.getStatus())) {
             return ResponseEntity.status(409).body("Tej trasy nie można zakończyć.");
+        }
+        if (route.getArrivedAt() == null) {
+            return ResponseEntity.status(409).body("Najpierw zgłoś dojazd do celu.");
         }
 
         releaseVehicle(route, route.getReturnBaseName());
