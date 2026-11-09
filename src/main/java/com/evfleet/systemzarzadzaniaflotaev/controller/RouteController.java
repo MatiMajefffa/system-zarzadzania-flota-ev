@@ -314,7 +314,7 @@ public class RouteController {
         String driverName = driver.getFirstName() + " " + driver.getLastName() + " (ID: " + driver.getId() + ")";
         reportRepository.save(Report.builder()
                 .description(event + ". Kierowca: " + driverName)
-                .type("STATUS_TRASY")
+                .type(Report.TYPE_ROUTE_STATUS)
                 .employeeId(route.getEmployeeId())
                 .vehicleRegistration(route.getVehicleRegistrationNumber())
                 .build());

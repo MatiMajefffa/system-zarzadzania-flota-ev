@@ -11,6 +11,7 @@ import RouteIcon from '@mui/icons-material/Route';
 import LogoutIcon from '@mui/icons-material/Logout';
 import PersonIcon from '@mui/icons-material/Person';
 import NotificationsIcon from '@mui/icons-material/Notifications';
+import WarningIcon from '@mui/icons-material/Warning';
 
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 // Import podkomponentów
@@ -20,6 +21,7 @@ import VehiclesView from '../components/dashboard/VehiclesView';
 import RoutesView from '../components/dashboard/RoutesView';
 import DriversView from '../components/dashboard/DriversView';
 import NotificationsView from '../components/dashboard/NotificationsView';
+import DriverReportsView from '../components/dashboard/DriverReportsView';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -154,7 +156,6 @@ export default function Dashboard() {
 
     const [lastRoute, setLastRoute] = useState(null);
     const [routeHistory, setRouteHistory] = useState([]);
-    const [reportForm, setReportForm] = useState({ description: '' });
     const [tripStage, setTripStage] = useState('IDLE');
     const [photos, setPhotos] = useState({ pickup: null, dropoff: null });
 
@@ -416,7 +417,7 @@ export default function Dashboard() {
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                 body: JSON.stringify({
                     description: '🚨 ALARM SOS: Kierowca wezwał pomoc drogową na trasie!',
-                    employeeId: employeeId || 'Nieznany'
+                    type: 'SOS'
                 })
             });
             if (response.ok) showMessage('Wezwano pomoc drogową!', 'error', 8000);
@@ -459,22 +460,6 @@ export default function Dashboard() {
                 showMessage(await response.text() || 'Nie udało się zwrócić pojazdu.', 'error');
             }
         } catch (err) { showMessage('Błąd zwrotu pojazdu.', 'error'); } finally { setLoading(false); }
-    };
-
-    const handleReportDamage = async () => {
-        if (!reportForm.description) return;
-        setLoading(true);
-        try {
-            const response = await fetch('/api/reports', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ description: reportForm.description, employeeId })
-            });
-            if (response.ok) {
-                showMessage('Zgłoszenie wysłane.', 'success');
-                setReportForm({ description: '' });
-            }
-        } catch (err) { showMessage('Błąd serwera.', 'error'); } finally { setLoading(false); }
     };
 
     const handleStartCharging = async (vehicleId) => {
@@ -743,6 +728,10 @@ export default function Dashboard() {
                                     <ListItemIcon><MapIcon color={activeTab === 'mapa' ? 'primary' : 'inherit'} /></ListItemIcon>
                                     <ListItemText primary="Stacje Ładowania" />
                                 </ListItem>
+                                <ListItem button selected={activeTab === 'zgloszenia'} onClick={() => setActiveTab('zgloszenia')}>
+                                    <ListItemIcon><WarningIcon color={activeTab === 'zgloszenia' ? 'primary' : 'inherit'} /></ListItemIcon>
+                                    <ListItemText primary="Zgłoszenia" />
+                                </ListItem>
                             </>
                         )}
 
@@ -787,15 +776,18 @@ export default function Dashboard() {
                             <DriverView
                                 message={message} setMessage={setMessage} tripStage={tripStage} lastRoute={lastRoute}
                                 routeHistory={routeHistory}
-                                loading={loading} routeResult={routeResult} photos={photos} handlePhotoUpload={handlePhotoUpload}
+                                routeResult={routeResult} photos={photos} handlePhotoUpload={handlePhotoUpload}
                                 isNavigating={isNavigating} setIsNavigating={setIsNavigating} handleFinishRoute={handleFinishRoute}
                                 handleReturnVehicle={handleReturnVehicle} currentLocation={currentLocation} routeWaypoints={routeWaypoints}
-                                routePath={routePath} reportForm={reportForm} setReportForm={setReportForm} handleReportDamage={handleReportDamage}
+                                routePath={routePath}
                                 handleSOS={handleSOS} carIcon={carIcon} RouteBoundsController={RouteBoundsController} NavigationController={NavigationController}
                                 newRouteNotification={unreadDriverNotifications[0]} onOpenNotifications={() => setActiveTab('powiadomienia')}
                                 handleStartAssignedRoute={handleStartAssignedRoute}
                                 handleOpenNavigation={handleOpenNavigation}
                             />
+                        )}
+                        {activeTab === 'zgloszenia' && (
+                            <DriverReportsView canReport={tripStage === 'EN_ROUTE' || tripStage === 'RETURNING_TO_BASE'} />
                         )}
                         {activeTab === 'powiadomienia' && (
                             <NotificationsView

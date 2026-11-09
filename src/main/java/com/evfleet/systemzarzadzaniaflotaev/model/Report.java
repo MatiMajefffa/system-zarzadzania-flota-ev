@@ -13,6 +13,10 @@ import java.time.LocalDateTime;
 @Builder
 public class Report {
 
+    public static final String TYPE_SOS = "SOS";
+    public static final String TYPE_ISSUE = "USTERKA";
+    public static final String TYPE_ROUTE_STATUS = "STATUS_TRASY";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

@@ -1,9 +1,8 @@
 import React from 'react';
 import {
-    Box, Typography, Button, TextField, Paper, Alert, Grid,
+    Box, Typography, Button, Paper, Alert, Grid,
     TableContainer, Table, TableHead, TableRow, TableCell, TableBody
 } from '@mui/material';
-import WarningIcon from '@mui/icons-material/Warning';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import NavigationIcon from '@mui/icons-material/Navigation';
@@ -18,10 +17,10 @@ const formatDuration = (minutes) => {
 
 export default function DriverView({
                                        message, setMessage, tripStage, lastRoute, routeHistory,
-                                       loading, routeResult, photos, handlePhotoUpload,
+                                       routeResult, photos, handlePhotoUpload,
                                        isNavigating, setIsNavigating, handleFinishRoute, handleReturnVehicle,
-                                       currentLocation, routeWaypoints, routePath, reportForm, setReportForm,
-                                       handleReportDamage, handleSOS, carIcon, RouteBoundsController, NavigationController,
+                                       currentLocation, routeWaypoints, routePath,
+                                       handleSOS, carIcon, RouteBoundsController, NavigationController,
                                        newRouteNotification, onOpenNotifications, handleStartAssignedRoute, handleOpenNavigation
                                    }) {
     const assignedRoute = lastRoute?.status === 'ZLECONA' ? lastRoute : null;
@@ -217,14 +216,6 @@ export default function DriverView({
                 </Paper>
             )}
 
-            {/* Formularz zgłaszania usterek */}
-            <Paper sx={{ p: 3, borderTop: '4px solid #d32f2f', mt: 2 }}>
-                <Typography variant="h6" color="error" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <WarningIcon /> Formularz Zgłoszeń i Usterek
-                </Typography>
-                <TextField fullWidth label="Szczegóły problemu na trasie" multiline rows={3} sx={{ mb: 2 }} value={reportForm.description} onChange={(e) => setReportForm({ ...reportForm, description: e.target.value })} />
-                <Button variant="contained" color="error" onClick={handleReportDamage} disabled={loading || !reportForm.description}>Wyślij zgłoszenie</Button>
-            </Paper>
         </Box>
     );
 }
