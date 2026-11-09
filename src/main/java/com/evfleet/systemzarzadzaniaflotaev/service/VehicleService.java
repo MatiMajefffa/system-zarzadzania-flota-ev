@@ -7,7 +7,10 @@ import com.evfleet.systemzarzadzaniaflotaev.model.VehicleStatus;
 import com.evfleet.systemzarzadzaniaflotaev.repository.RouteEntityRepository;
 import com.evfleet.systemzarzadzaniaflotaev.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Optional;
@@ -19,6 +22,7 @@ public class VehicleService {
 
     private final VehicleRepository vehicleRepository;
     private final RouteEntityRepository routeRepository;
+    private final BatterySimulationService batterySimulationService;
 
     // Pobranie wszystkich pojazdów jako DTO
     public List<VehicleDto> getAllVehicles() {
@@ -91,6 +95,20 @@ public class VehicleService {
         return convertToDto(updatedVehicle);
     }
 
+    // Ręczne uruchomienie ładowania w bazie (Menedżer)
+    @Transactional
+    public VehicleDto startCharging(Long id) {
+        Vehicle vehicle = vehicleRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Nie znaleziono pojazdu."));
+
+        if (vehicle.getStatus() != VehicleStatus.DOSTEPNY || vehicle.getStateOfCharge() >= 100) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tego pojazdu nie można teraz ładować.");
+        }
+
+        batterySimulationService.startCharging(vehicle);
+        return convertToDto(vehicleRepository.save(vehicle));
+    }
+
     // --- Metody pomocnicze do mapowania ---
 
     private VehicleDto convertToDto(Vehicle vehicle) {
@@ -106,6 +124,7 @@ public class VehicleService {
         dto.setIsBlocked(vehicle.getIsBlocked());
         dto.setTotalMileage(vehicle.getTotalMileage());
         dto.setCurrentBase(vehicle.getCurrentBase());
+        dto.setChargingEndsAt(vehicle.getChargingEndsAt());
 
         return dto;
     }

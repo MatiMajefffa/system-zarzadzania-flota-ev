@@ -2,6 +2,7 @@ package com.evfleet.systemzarzadzaniaflotaev.controller;
 
 import com.evfleet.systemzarzadzaniaflotaev.dto.RouteHistoryDto;
 import com.evfleet.systemzarzadzaniaflotaev.model.DriverNotification;
+import com.evfleet.systemzarzadzaniaflotaev.model.Report;
 import com.evfleet.systemzarzadzaniaflotaev.model.Role;
 import com.evfleet.systemzarzadzaniaflotaev.model.RouteEntity;
 import com.evfleet.systemzarzadzaniaflotaev.model.User;
@@ -9,11 +10,14 @@ import com.evfleet.systemzarzadzaniaflotaev.model.Vehicle;
 import com.evfleet.systemzarzadzaniaflotaev.model.VehicleStatus;
 import com.evfleet.systemzarzadzaniaflotaev.model.VehicleType;
 import com.evfleet.systemzarzadzaniaflotaev.repository.DriverNotificationRepository;
+import com.evfleet.systemzarzadzaniaflotaev.repository.ReportRepository;
 import com.evfleet.systemzarzadzaniaflotaev.repository.RouteEntityRepository;
 import com.evfleet.systemzarzadzaniaflotaev.repository.UserRepository;
 import com.evfleet.systemzarzadzaniaflotaev.repository.VehicleRepository;
 import com.evfleet.systemzarzadzaniaflotaev.security.SecurityUtils;
+import com.evfleet.systemzarzadzaniaflotaev.service.BatterySimulationService;
 import com.evfleet.systemzarzadzaniaflotaev.service.RoutePlanningService;
+import com.evfleet.systemzarzadzaniaflotaev.service.WeatherService;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -39,6 +43,9 @@ public class RouteController {
     private final RouteEntityRepository routeEntityRepository; // Repozytorium do zapisu trwałych tras
     private final DriverNotificationRepository driverNotificationRepository;
     private final UserRepository userRepository;
+    private final ReportRepository reportRepository;
+    private final WeatherService weatherService;
+    private final BatterySimulationService batterySimulationService;
 
     // Klasa DTO do żądania przypisania trasy kierowcy
     @Getter
@@ -89,7 +96,7 @@ public class RouteController {
             @RequestParam double endLat,
             @RequestParam(required = false) String baseName,
             @RequestParam(required = false) VehicleType vehicleType,
-            @RequestParam(defaultValue = "15.0") double temperature) {
+            @RequestParam(required = false) Double temperature) {
 
         // Pobieramy wszystkie pojazdy i szukamy pasującego
         List<Vehicle> vehicles = vehicleRepository.findAll();
@@ -107,7 +114,8 @@ public class RouteController {
 
         // Wywołujemy właściwe planowanie trasy dla znalezionego pojazdu
         RoutePlanningService.RoutePlanResult result = routePlanningService.planRoute(
-                selectedVehicle.getId(), startLon, startLat, endLon, endLat, temperature
+                selectedVehicle.getId(), startLon, startLat, endLon, endLat,
+                temperature != null ? temperature : weatherService.getCurrentTemperature(startLat, startLon)
         );
 
         return ResponseEntity.ok(result);
@@ -200,6 +208,7 @@ public class RouteController {
 
         route.setStatus(RouteEntity.STATUS_IN_PROGRESS);
         route.setStartedAt(LocalDateTime.now());
+        notifyManagers(route, "Rozpoczęto trasę " + describeRoute(route));
         return ResponseEntity.ok(routeEntityRepository.save(route));
     }
 
@@ -216,7 +225,14 @@ public class RouteController {
             return ResponseEntity.status(409).body("Nie można zgłosić dojazdu dla tej trasy.");
         }
 
+        double temperature = weatherService.getCurrentTemperature(route.getEndLat(), route.getEndLng());
+        vehicleRepository.findByIdForUpdate(route.getVehicleId()).ifPresent(vehicle -> {
+            batterySimulationService.applyDrive(vehicle, route.getDistanceKm(), temperature, route.getChargingStopLat() != null);
+            vehicleRepository.save(vehicle);
+        });
+
         route.setArrivedAt(LocalDateTime.now());
+        notifyManagers(route, "Dotarcie do celu na trasie " + describeRoute(route));
         return ResponseEntity.ok(routeEntityRepository.save(route));
     }
 
@@ -255,9 +271,40 @@ public class RouteController {
             return ResponseEntity.status(409).body("Najpierw zgłoś dojazd do celu.");
         }
 
-        releaseVehicle(route, route.getReturnBaseName());
+        // Powrót do bazy liczony jako ten sam dystans co trasa
+        double temperature = weatherService.getCurrentTemperature(route.getStartLat(), route.getStartLng());
+        vehicleRepository.findByIdForUpdate(route.getVehicleId()).ifPresent(vehicle -> {
+            batterySimulationService.applyDrive(vehicle, route.getDistanceKm(), temperature, false);
+            if (StringUtils.hasText(route.getReturnBaseName())) {
+                vehicle.setCurrentBase(route.getReturnBaseName());
+            }
+            if (vehicle.getStateOfCharge() < BatterySimulationService.AUTO_CHARGE_THRESHOLD_PERCENT) {
+                batterySimulationService.startCharging(vehicle);
+            } else {
+                vehicle.setStatus(VehicleStatus.DOSTEPNY);
+            }
+            vehicleRepository.save(vehicle);
+        });
+
         route.setStatus(RouteEntity.STATUS_FINISHED);
+        notifyManagers(route, "Pojazd wrócił do bazy " + route.getReturnBaseName() + " po trasie " + describeRoute(route));
         return ResponseEntity.ok(routeEntityRepository.save(route));
+    }
+
+    private static String describeRoute(RouteEntity route) {
+        return route.getStartAddress() + " → " + route.getEndAddress();
+    }
+
+    // Powiadomienia menedżera to zgłoszenia, które pokazuje panel "Powiadomienia"
+    private void notifyManagers(RouteEntity route, String event) {
+        User driver = SecurityUtils.getCurrentUser();
+        String driverName = driver.getFirstName() + " " + driver.getLastName() + " (ID: " + driver.getId() + ")";
+        reportRepository.save(Report.builder()
+                .description(event + ". Kierowca: " + driverName)
+                .type("STATUS_TRASY")
+                .employeeId(route.getEmployeeId())
+                .vehicleRegistration(route.getVehicleRegistrationNumber())
+                .build());
     }
 
     // Menedżer anuluje zlecenie, którego kierowca jeszcze nie rozpoczął
@@ -273,7 +320,10 @@ public class RouteController {
             return ResponseEntity.status(409).body("Można anulować tylko trasę, której kierowca jeszcze nie rozpoczął.");
         }
 
-        releaseVehicle(route, null);
+        vehicleRepository.findByIdForUpdate(route.getVehicleId()).ifPresent(vehicle -> {
+            vehicle.setStatus(VehicleStatus.DOSTEPNY);
+            vehicleRepository.save(vehicle);
+        });
         route.setStatus(RouteEntity.STATUS_CANCELLED);
         routeEntityRepository.save(route);
 
@@ -291,16 +341,6 @@ public class RouteController {
     private Optional<RouteEntity> findOwnRoute(Long id) {
         String currentEmployeeId = String.valueOf(SecurityUtils.getCurrentUserId());
         return routeEntityRepository.findById(id).filter(route -> currentEmployeeId.equals(route.getEmployeeId()));
-    }
-
-    private void releaseVehicle(RouteEntity route, String newBaseName) {
-        vehicleRepository.findByIdForUpdate(route.getVehicleId()).ifPresent(vehicle -> {
-            vehicle.setStatus(VehicleStatus.DOSTEPNY);
-            if (StringUtils.hasText(newBaseName)) {
-                vehicle.setCurrentBase(newBaseName);
-            }
-            vehicleRepository.save(vehicle);
-        });
     }
 
     private static boolean isAvailable(Vehicle vehicle) {

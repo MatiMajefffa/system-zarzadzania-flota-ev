@@ -5,6 +5,8 @@ import jakarta.validation.constraints.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDateTime;
+
 @Getter
 @Setter
 public class VehicleDto {
@@ -13,6 +15,7 @@ public class VehicleDto {
     private Boolean isBlocked;
     private Double totalMileage;
     private String currentBase;
+    private LocalDateTime chargingEndsAt;
 
     @NotBlank(message = "Numer rejestracyjny nie może być pusty")
     private String registrationNumber;

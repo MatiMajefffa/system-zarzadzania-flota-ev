@@ -3,7 +3,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
     Box, Drawer, AppBar, Toolbar, Typography, Button, List,
-    ListItem, ListItemIcon, ListItemText, Badge
+    ListItem, ListItemIcon, ListItemText, Badge, IconButton
 } from '@mui/material';
 import MapIcon from '@mui/icons-material/Map';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
@@ -141,7 +141,7 @@ export default function Dashboard() {
     const [selectedVehicle, setSelectedVehicle] = useState(null);
     const [showVehicleDetails, setShowVehicleDetails] = useState(false);
     const [deleteCode, setDeleteCode] = useState('');
-    const [assignRouteDialog, setAssignRouteDialog] = useState({ open: false, driverId: null, start: '', end: '' });
+    const [activeRoutes, setActiveRoutes] = useState([]);
 
     useEffect(() => {
         if (!token || token === 'undefined' || token === 'null') {
@@ -153,6 +153,7 @@ export default function Dashboard() {
             if (userRole === 'MANAGER') {
                 fetchDrivers();
                 fetchNotifications();
+                fetchActiveRoutes();
             } else {
                 fetchLastRoute();
                 fetchRouteHistory();
@@ -181,7 +182,28 @@ export default function Dashboard() {
         };
     }, [isNavigating]);
 
+    // Menedżer widzi postępy kierowców, a kierowca nowe zlecenia i wiadomości bez odświeżania strony
+    useEffect(() => {
+        if (!token || token === 'undefined' || token === 'null') return undefined;
+        const refresh = () => {
+            if (userRole === 'MANAGER') {
+                fetchNotifications();
+                fetchActiveRoutes();
+                fetchVehicles();
+            } else {
+                fetchDriverNotifications();
+                // W trakcie podróży etap jest prowadzony lokalnie i nie może zostać nadpisany
+                if (tripStage === 'IDLE') fetchLastRoute();
+            }
+        };
+        const intervalId = setInterval(refresh, 15000);
+        return () => clearInterval(intervalId);
+    }, [token, userRole, tripStage]);
+
     const unreadDriverNotifications = driverNotifications.filter(n => n.status === 'NIEODCZYTANY');
+    const unreadCount = userRole === 'MANAGER'
+        ? notifications.filter(n => !n.status || ['NIEODCZYTANY', 'NOWY'].includes(n.status.toUpperCase())).length
+        : unreadDriverNotifications.length;
 
     const handleLogout = () => {
         localStorage.removeItem('token');
@@ -232,6 +254,13 @@ export default function Dashboard() {
         try {
             const response = await fetch('/api/reports', { headers: { Authorization: `Bearer ${token}` } });
             if (response.ok) setNotifications(await response.json());
+        } catch (err) { console.error(err); }
+    };
+
+    const fetchActiveRoutes = async () => {
+        try {
+            const response = await fetch('/api/routes/active', { headers: { Authorization: `Bearer ${token}` } });
+            if (response.ok) setActiveRoutes(await response.json());
         } catch (err) { console.error(err); }
     };
 
@@ -398,6 +427,15 @@ export default function Dashboard() {
         } catch (err) { showMessage('Błąd serwera.', 'error'); } finally { setLoading(false); }
     };
 
+    const handleStartCharging = async (vehicleId) => {
+        try {
+            const response = await fetch(`/api/vehicles/${vehicleId}/charge`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+            showMessage(response.ok ? 'Rozpoczęto ładowanie pojazdu.' : 'Tego pojazdu nie można teraz ładować.', response.ok ? 'success' : 'error');
+            setShowVehicleDetails(false);
+            fetchVehicles();
+        } catch (e) { showMessage('Błąd łączenia z serwerem.', 'error'); }
+    };
+
     const handleToggleBlockVehicle = async (vehicleId) => {
         try {
             await fetch(`/api/vehicles/${vehicleId}/block`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` } });
@@ -407,9 +445,40 @@ export default function Dashboard() {
         } catch (e) { showMessage('Błąd łączenia z serwerem.', 'error'); }
     };
 
-    const handleAssignRouteToDriver = async () => {
-        showMessage(`Trasa zlecona kierowcy ID: ${assignRouteDialog.driverId}`, 'success');
-        setAssignRouteDialog({ open: false, driverId: null, start: '', end: '' });
+    // Zleca ostatnio wyznaczoną trasę; zwraca treść błędu albo null
+    const handleAssignRouteToDriver = async (driverId) => {
+        try {
+            const response = await fetch('/api/routes/assign-to-driver', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({
+                    employeeId: String(driverId),
+                    vehicleId: routeResult.assignedVehicleId,
+                    vehicleRegistrationNumber: routeResult.vehicleRegistrationNumber,
+                    startAddress: routeWaypoints.start?.name,
+                    endAddress: routeWaypoints.end?.name,
+                    distanceKm: routeResult.distanceKm,
+                    energyRequiredKWh: routeResult.energyRequiredKWh,
+                    vehicleRangeKm: routeResult.vehicleRangeKm,
+                    returnBaseName: routeResult.returnBaseName,
+                    startLat: routeWaypoints.start?.lat,
+                    startLng: routeWaypoints.start?.lng,
+                    endLat: routeWaypoints.end?.lat,
+                    endLng: routeWaypoints.end?.lng,
+                    chargingStopLat: routeWaypoints.stops?.[0]?.lat,
+                    chargingStopLng: routeWaypoints.stops?.[0]?.lng,
+                    chargingStopName: routeWaypoints.stops?.[0]?.name
+                })
+            });
+            if (!response.ok) return await response.text();
+
+            setRouteResult(prev => ({ ...prev, assigned: true }));
+            fetchActiveRoutes();
+            return null;
+        } catch (err) {
+            console.error(err);
+            return 'Błąd połączenia z serwerem.';
+        }
     };
 
     const handleSync = async () => {
@@ -520,7 +589,7 @@ export default function Dashboard() {
             }
 
             // 3. Wywołanie endpointu backendowego z uwzględnieniem bazy oraz typu pojazdu (cargoType)
-            const url = `/api/routes/plan-auto?startLon=${startLon}&startLat=${startLat}&endLon=${endLon}&endLat=${endLat}&baseName=${encodeURIComponent(formData.startBase)}&vehicleType=${formData.cargoType}&temperature=15.0`;
+            const url = `/api/routes/plan-auto?startLon=${startLon}&startLat=${startLat}&endLon=${endLon}&endLat=${endLat}&baseName=${encodeURIComponent(formData.startBase)}&vehicleType=${formData.cargoType}`;
 
             const response = await fetch(url, {
                 headers: { Authorization: `Bearer ${token}` }
@@ -528,7 +597,6 @@ export default function Dashboard() {
 
             if (response.ok) {
                 const data = await response.json();
-                if (!data.energyRequiredKWh) data.energyRequiredKWh = (data.distanceKm || 50) * 0.18;
 
                 setRouteResult(data);
                 const stops = getRouteStops(data);
@@ -548,10 +616,7 @@ export default function Dashboard() {
                     }
                 } catch (e) { console.error(e); }
 
-                showMessage('Trasa wyznaczona pomyślnie! Przełączam na mapę.', 'success');
-                setTripStage('EN_ROUTE');
-                setIsNavigating(true);
-
+                showMessage('Trasa wyznaczona pomyślnie!', 'success');
             } else {
                 showMessage('Brak dostępnych pojazdów tego typu w wybranej bazie.', 'error');
             }
@@ -586,6 +651,19 @@ export default function Dashboard() {
             <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, backgroundColor: '#1e293b' }}>
                 <Toolbar>
                     <Typography variant="h6" noWrap sx={{ flexGrow: 1 }}>System Zarządzania Flotą EV</Typography>
+                    <IconButton color="inherit" aria-label="Powiadomienia" title="Powiadomienia" onClick={() => setActiveTab('powiadomienia')} sx={{ mr: 1 }}>
+                        <Badge badgeContent={unreadCount} color="error">
+                            <NotificationsIcon sx={unreadCount > 0 ? {
+                                color: '#facc15',
+                                '@keyframes bell-glow': {
+                                    '0%, 100%': { filter: 'drop-shadow(0 0 1px #facc15)' },
+                                    '50%': { filter: 'drop-shadow(0 0 8px #facc15)' }
+                                },
+                                animation: 'bell-glow 1.5s ease-in-out infinite',
+                                '@media (prefers-reduced-motion: reduce)': { animation: 'none', filter: 'drop-shadow(0 0 4px #facc15)' }
+                            } : undefined} />
+                        </Badge>
+                    </IconButton>
                     <Button color="inherit" onClick={handleLogout} startIcon={<LogoutIcon />}>Wyloguj</Button>
                 </Toolbar>
             </AppBar>
@@ -624,7 +702,7 @@ export default function Dashboard() {
                             <>
                                 <ListItem button selected={activeTab === 'powiadomienia'} onClick={() => setActiveTab('powiadomienia')}>
                                     <ListItemIcon>
-                                        <Badge badgeContent={notifications.filter(n => n.type === 'SOS').length} color="error">
+                                        <Badge badgeContent={unreadCount} color="error">
                                             <NotificationsIcon color={activeTab === 'powiadomienia' ? 'primary' : 'inherit'} />
                                         </Badge>
                                     </ListItemIcon>
@@ -704,7 +782,7 @@ export default function Dashboard() {
                                 message={message} setMessage={setMessage} showVehicleForm={showVehicleForm} setShowVehicleForm={setShowVehicleForm}
                                 newVehicle={newVehicle} setNewVehicle={setNewVehicle} bases={bases} handleAddVehicle={handleAddVehicle}
                                 loading={loading} vehicles={vehicles} setSelectedVehicle={setSelectedVehicle} setShowVehicleDetails={setShowVehicleDetails}
-                                showVehicleDetails={showVehicleDetails} selectedVehicle={selectedVehicle} handleToggleBlockVehicle={handleToggleBlockVehicle}
+                                showVehicleDetails={showVehicleDetails} selectedVehicle={selectedVehicle} handleToggleBlockVehicle={handleToggleBlockVehicle} handleStartCharging={handleStartCharging}
                                 deleteCode={deleteCode} setDeleteCode={setDeleteCode} handleDeleteVehicle={handleDeleteVehicle} baseIcon={baseIcon}
                             />
                         )}
@@ -716,17 +794,28 @@ export default function Dashboard() {
                                 message={message}
                                 setMessage={setMessage}
                                 onRoutePlanned={handlePlanRouteFromBaseAndCargo}
-                                onRouteAssigned={() => setRouteResult(prev => ({ ...prev, assigned: true }))}
+                                activeRoutes={activeRoutes}
+                                onActiveRoutesChanged={fetchActiveRoutes}
+                                onAssignRoute={handleAssignRouteToDriver}
                                 routePath={routePath}
                                 routeWaypoints={routeWaypoints}
                                 routeResult={routeResult}
                             />
                         )}
                         {activeTab === 'kierowcy' && (
-                            <DriversView drivers={drivers} assignRouteDialog={assignRouteDialog} setAssignRouteDialog={setAssignRouteDialog} handleAssignRouteToDriver={handleAssignRouteToDriver} />
+                            <DriversView
+                                drivers={drivers}
+                                bases={bases}
+                                activeRoutes={activeRoutes}
+                                message={message}
+                                loading={loading}
+                                routeResult={routeResult}
+                                onPlanRoute={handlePlanRouteFromBaseAndCargo}
+                                onAssignRoute={handleAssignRouteToDriver}
+                            />
                         )}
                         {activeTab === 'powiadomienia' && (
-                            <NotificationsView notifications={notifications} />
+                            <NotificationsView notifications={notifications} onChanged={fetchNotifications} />
                         )}
                     </>
                 )}

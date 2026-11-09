@@ -72,6 +72,13 @@ public class VehicleController {
         return ResponseEntity.ok(vehicleService.toggleBlockVehicle(id));
     }
 
+    // Ręczne uruchomienie ładowania pojazdu w bazie
+    @PostMapping("/{id}/charge")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<VehicleDto> startCharging(@PathVariable Long id) {
+        return ResponseEntity.ok(vehicleService.startCharging(id));
+    }
+
     // Ręczny zwrot pojazdu do bazy; kierowca zwraca pojazd przez zakończenie zleconej trasy
     @PostMapping("/{id}/return")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")

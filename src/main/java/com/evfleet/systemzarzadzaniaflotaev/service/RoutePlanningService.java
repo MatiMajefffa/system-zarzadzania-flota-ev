@@ -17,6 +17,7 @@ public class RoutePlanningService {
     private final RouteService routeService;
     private final VehicleRepository vehicleRepository;
     private final ChargingStationRepository stationRepository;
+    private final BatterySimulationService batterySimulationService;
 
     public RoutePlanResult planRoute(Long vehicleId, double startLon, double startLat, double endLon, double endLat, double temperature) {
 
@@ -24,10 +25,9 @@ public class RoutePlanningService {
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
                 .orElseThrow(() -> new RuntimeException("Nie znaleziono pojazdu"));
 
-        double baseConsumption = 0.18; // kWh/km
-        double weatherFactor = (temperature < 0) ? 1.2 : 1.0;
+        double consumption = batterySimulationService.getConsumption(vehicle, temperature);
         double currentEnergy = (vehicle.getStateOfCharge() / 100.0) * vehicle.getBatteryCapacityKWh();
-        double currentRangeKm = currentEnergy / (baseConsumption * weatherFactor);
+        double currentRangeKm = currentEnergy / consumption;
 
         // 2. Sprawdź bazową trasę A -> B
         RouteResponseDto.Route directRoute = routeService.getRoute(startLon, startLat, endLon, endLat);
@@ -37,6 +37,8 @@ public class RoutePlanningService {
         result.setAssignedVehicleId(vehicle.getId());
         result.setVehicleRegistrationNumber(vehicle.getRegistrationNumber());
         result.setReturnBaseName(vehicle.getCurrentBase());
+        result.setTemperatureC(temperature);
+        result.setConsumptionKWhPerKm(consumption);
         result.setTotalDistanceKm(totalDistanceKm);
         result.setCurrentRangeKm(currentRangeKm);
 
@@ -86,6 +88,13 @@ public class RoutePlanningService {
 
         result.setSelectedChargingStation(stationDto);
 
+        // Czas postoju: brakująca energia z rezerwą na dojazd, przy mocy wybranej stacji
+        double reserveKWh = BatterySimulationService.RESERVE_AFTER_CHARGING_STOP_PERCENT / 100.0 * vehicle.getBatteryCapacityKWh();
+        double energyToChargeKWh = Math.max(0, result.getEnergyRequiredKWh() - currentEnergy + reserveKWh);
+        double stationPowerKW = chosenStation.getPowerKW() != null && chosenStation.getPowerKW() > 0
+                ? chosenStation.getPowerKW() : BatterySimulationService.DEFAULT_CHARGER_POWER_KW;
+        result.setChargingStopMinutes(energyToChargeKWh / (stationPowerKW * BatterySimulationService.CHARGING_EFFICIENCY) * 60);
+
         return result;
     }
 
@@ -100,6 +109,13 @@ public class RoutePlanningService {
         private boolean requiresChargingStop;
         private List<List<Double>> routeCoordinates;
         private ChargingStationDto selectedChargingStation;
+        private double temperatureC;
+        private double consumptionKWhPerKm;
+        private Double chargingStopMinutes;
+
+        public double getEnergyRequiredKWh() {
+            return totalDistanceKm * consumptionKWhPerKm;
+        }
 
         // Nazwy pól, których oczekuje frontend
         public double getDistanceKm() {
