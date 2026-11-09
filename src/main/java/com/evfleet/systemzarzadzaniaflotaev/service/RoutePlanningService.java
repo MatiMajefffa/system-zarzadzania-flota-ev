@@ -34,6 +34,9 @@ public class RoutePlanningService {
         double totalDistanceKm = directRoute.getDistance() / 1000.0;
 
         RoutePlanResult result = new RoutePlanResult();
+        result.setAssignedVehicleId(vehicle.getId());
+        result.setVehicleRegistrationNumber(vehicle.getRegistrationNumber());
+        result.setReturnBaseName(vehicle.getCurrentBase());
         result.setTotalDistanceKm(totalDistanceKm);
         result.setCurrentRangeKm(currentRangeKm);
 
@@ -88,11 +91,23 @@ public class RoutePlanningService {
 
     @lombok.Getter @lombok.Setter
     public static class RoutePlanResult {
+        private Long assignedVehicleId;
+        private String vehicleRegistrationNumber;
+        private String returnBaseName;
         private double totalDistanceKm;
         private double totalDurationMinutes;
         private double currentRangeKm;
         private boolean requiresChargingStop;
         private List<List<Double>> routeCoordinates;
         private ChargingStationDto selectedChargingStation;
+
+        // Nazwy pól, których oczekuje frontend
+        public double getDistanceKm() {
+            return totalDistanceKm;
+        }
+
+        public double getVehicleRangeKm() {
+            return currentRangeKm;
+        }
     }
 }

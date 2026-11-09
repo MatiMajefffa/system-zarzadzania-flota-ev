@@ -1,25 +1,45 @@
 import React from 'react';
-import { Box, Typography, Button, List, ListItem, ListItemText, TextField, Paper, Alert, Grid } from '@mui/material';
-import RouteIcon from '@mui/icons-material/Route';
+import {
+    Box, Typography, Button, TextField, Paper, Alert, Grid,
+    TableContainer, Table, TableHead, TableRow, TableCell, TableBody
+} from '@mui/material';
 import WarningIcon from '@mui/icons-material/Warning';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import NavigationIcon from '@mui/icons-material/Navigation';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 
+const formatDuration = (minutes) => {
+    if (minutes == null) return '—';
+    const hours = Math.floor(minutes / 60);
+    return hours > 0 ? `${hours} h ${minutes % 60} min` : `${minutes} min`;
+};
+
 export default function DriverView({
-                                       message, setMessage, tripStage, lastRoute, driverNavForm, setDriverNavForm,
-                                       handleAutoAssignRoute, loading, routeResult, photos, handlePhotoUpload,
+                                       message, setMessage, tripStage, lastRoute, routeHistory,
+                                       loading, routeResult, photos, handlePhotoUpload,
                                        isNavigating, setIsNavigating, handleFinishRoute, handleReturnVehicle,
                                        currentLocation, routeWaypoints, routePath, reportForm, setReportForm,
-                                       handleReportDamage, handleSOS, carIcon, RouteBoundsController, NavigationController
+                                       handleReportDamage, handleSOS, carIcon, RouteBoundsController, NavigationController,
+                                       newRouteNotification, onOpenNotifications, handleStartAssignedRoute
                                    }) {
+    const assignedRoute = lastRoute?.status === 'ZLECONA' ? lastRoute : null;
+
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {message.text && <Alert severity={message.type} onClose={() => setMessage({ text: '' })}>{message.text}</Alert>}
 
+            {newRouteNotification && (
+                <Alert
+                    severity="info"
+                    action={<Button color="inherit" size="small" onClick={onOpenNotifications}>Zobacz</Button>}
+                >
+                    {newRouteNotification.description}
+                </Alert>
+            )}
+
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="h5">Panel Kierowcy</Typography>
+                <Typography variant="h5" fontWeight="bold">Panel Kierowcy - Zlecenia i Trasy</Typography>
                 {tripStage === 'EN_ROUTE' && (
                     <Button variant="contained" color="error" size="large" startIcon={<LocalHospitalIcon />} onClick={handleSOS} sx={{ animation: 'pulse 2s infinite' }}>
                         SOS - WEZWIJ POMOC
@@ -29,39 +49,70 @@ export default function DriverView({
 
             {tripStage === 'IDLE' && (
                 <Grid container spacing={3}>
-                    <Grid item xs={12} md={4}>
-                        <Paper sx={{ p: 3, height: '100%', borderTop: '4px solid #1976d2' }}>
-                            <Typography variant="h6" gutterBottom color="primary">Ostatnio odbyta trasa</Typography>
-                            {lastRoute ? (
-                                <Box sx={{ mt: 2 }}>
-                                    <Typography><strong>Skąd:</strong> {lastRoute.startAddress || 'Nieznane'}</Typography>
-                                    <Typography><strong>Dokąd:</strong> {lastRoute.endAddress || 'Nieznane'}</Typography>
-                                    <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>Dystans: {lastRoute.distanceKm ? lastRoute.distanceKm.toFixed(2) : '?'} km</Typography>
-                                </Box>
-                            ) : <Typography color="textSecondary" sx={{ mt: 2 }}>Brak tras w historii.</Typography>}
+                    {/* Sekcja wyświetlająca przypisaną trasę od menedżera */}
+                    <Grid item xs={12} md={5}>
+                        <Paper sx={{ p: 3, height: '100%', borderTop: '4px solid #1976d2', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                            <Box>
+                                <Typography variant="h6" gutterBottom color="primary">
+                                    📋 Przypisane Zlecenie
+                                </Typography>
+                                {assignedRoute ? (
+                                    <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                        <Typography variant="body2"><b>Skąd (Start):</b> {assignedRoute.startAddress || 'Baza'}</Typography>
+                                        <Typography variant="body2"><b>Dokąd (Cel):</b> {assignedRoute.endAddress || 'Nieznane'}</Typography>
+                                        <Typography variant="body2"><b>Pojazd:</b> {assignedRoute.vehicleRegistrationNumber || 'Przydzielony'}</Typography>
+                                        <Typography variant="body2"><b>Dystans:</b> {assignedRoute.distanceKm ? assignedRoute.distanceKm.toFixed(2) : '?'} km</Typography>
+                                        <Typography variant="body2"><b>Wymagana energia:</b> {assignedRoute.energyRequiredKWh ? assignedRoute.energyRequiredKWh.toFixed(1) : '?'} kWh</Typography>
+                                        <Button variant="contained" startIcon={<NavigationIcon />} onClick={() => handleStartAssignedRoute(assignedRoute)} sx={{ mt: 1 }}>
+                                            Rozpocznij trasę
+                                        </Button>
+                                    </Box>
+                                ) : (
+                                    <Typography color="textSecondary" sx={{ mt: 2 }}>
+                                        Brak nowych zleceń od menedżera.
+                                    </Typography>
+                                )}
+                            </Box>
                         </Paper>
                     </Grid>
-                    <Grid item xs={12} md={8}>
+
+                    <Grid item xs={12} md={7}>
                         <Paper sx={{ p: 3, height: '100%', borderTop: '4px solid #2e7d32' }}>
-                            <Typography variant="h6" gutterBottom color="success.main">Rozpocznij nową trasę</Typography>
-                            <Grid container spacing={2}>
-                                <Grid item xs={12} sm={6}>
-                                    <TextField fullWidth size="small" label="Skąd" value={driverNavForm.startAddress} onChange={(e) => setDriverNavForm({ ...driverNavForm, startAddress: e.target.value })} />
-                                </Grid>
-                                <Grid item xs={12} sm={6}>
-                                    <TextField fullWidth size="small" label="Dokąd" value={driverNavForm.endAddress} onChange={(e) => setDriverNavForm({ ...driverNavForm, endAddress: e.target.value })} />
-                                </Grid>
-                                <Grid item xs={12}>
-                                    <Button variant="contained" color="success" startIcon={<RouteIcon />} onClick={handleAutoAssignRoute} disabled={loading} fullWidth>
-                                        Przydziel Pojazd i Oblicz Trasę
-                                    </Button>
-                                </Grid>
-                            </Grid>
+                            <Typography variant="h6" gutterBottom color="success.main">
+                                Moje ostatnie trasy
+                            </Typography>
+                            {routeHistory.length > 0 ? (
+                                <TableContainer>
+                                    <Table size="small">
+                                        <TableHead>
+                                            <TableRow>
+                                                <TableCell><strong>Skąd</strong></TableCell>
+                                                <TableCell><strong>Dokąd</strong></TableCell>
+                                                <TableCell align="right"><strong>Czas</strong></TableCell>
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {routeHistory.map((route) => (
+                                                <TableRow key={route.id}>
+                                                    <TableCell>{route.startAddress}</TableCell>
+                                                    <TableCell>{route.endAddress}</TableCell>
+                                                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{formatDuration(route.durationMinutes)}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </TableContainer>
+                            ) : (
+                                <Typography color="textSecondary" sx={{ mt: 2 }}>
+                                    Nie masz jeszcze zakończonych tras.
+                                </Typography>
+                            )}
                         </Paper>
                     </Grid>
                 </Grid>
             )}
 
+            {/* Aktywny etap podróży (Odbiór -> Trasa -> Zwrot) */}
             {routeResult && tripStage !== 'IDLE' && (
                 <Paper sx={{ p: 3, border: '2px solid #1976d2' }}>
                     <Typography variant="h6" color="primary" gutterBottom>
@@ -74,20 +125,19 @@ export default function DriverView({
                         <Grid item xs={12} sm={6}>
                             <Alert severity="info">
                                 <strong>Przypisany Pojazd:</strong> {routeResult.vehicleRegistrationNumber || 'Auto Systemowe'}<br />
-                                <strong>Zasięg pojazdu:</strong> ~{routeResult.vehicleRangeKm?.toFixed(0) || '?'} km<br />
+                                <strong>Zasięg pojazdu:</strong> ~{routeResult.vehicleRangeKm?.toFixed(0) || '300'} km<br />
                                 <strong>Wymagana energia:</strong> {routeResult.energyRequiredKWh?.toFixed(1)} kWh
                             </Alert>
                         </Grid>
                         <Grid item xs={12} sm={6}>
                             <Alert severity="success">
-                                <strong>Dystans całkowity:</strong> {routeResult.totalDistanceKm ? routeResult.totalDistanceKm.toFixed(2) : routeResult.distanceKm?.toFixed(2)} km<br />
-                                <strong>Czas podróży:</strong> {routeResult.totalTimeMinutes ? routeResult.totalTimeMinutes.toFixed(0) : routeResult.estimatedTimeMinutes?.toFixed(0)} min<br />
+                                <strong>Dystans całkowity:</strong> {routeResult.distanceKm?.toFixed(2) || '50'} km<br />
                                 <strong>Baza docelowa na koniec:</strong> {routeResult.returnBaseName || 'Katowice'}
                             </Alert>
                         </Grid>
                     </Grid>
 
-                    <Box sx={{ p: 2, backgroundColor: '#f5f5f5', borderRadius: 2, mb: 3, display: 'flex', gap: 2, alignItems: 'center' }}>
+                    <Box sx={{ p: 2, backgroundColor: '#f5f5f5', borderRadius: 2, mb: 3, display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
                         {tripStage === 'PICKUP' && (
                             <>
                                 <Button component="label" variant="contained" startIcon={<PhotoCameraIcon />}>
@@ -150,6 +200,7 @@ export default function DriverView({
                 </Paper>
             )}
 
+            {/* Formularz zgłaszania usterek */}
             <Paper sx={{ p: 3, borderTop: '4px solid #d32f2f', mt: 2 }}>
                 <Typography variant="h6" color="error" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <WarningIcon /> Formularz Zgłoszeń i Usterek
