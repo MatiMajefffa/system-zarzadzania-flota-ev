@@ -65,6 +65,7 @@ function RouteBoundsController({ waypoints }) {
             if (waypoints.stops) {
                 waypoints.stops.forEach(s => bounds.extend([s.lat, s.lng]));
             }
+            if (waypoints.origin) bounds.extend([waypoints.origin.lat, waypoints.origin.lng]);
             map.fitBounds(bounds, { padding: [50, 50] });
         }
     }, [waypoints, map]);
@@ -94,6 +95,32 @@ const getRoleFromToken = (token) => {
         return 'DRIVER';
     }
 };
+
+const buildGoogleMapsUrl = (origin, destination, stops = []) => {
+    const toParam = (point) => `${point.lat},${point.lng}`;
+    const params = new URLSearchParams({
+        api: '1',
+        destination: toParam(destination),
+        travelmode: 'driving',
+        dir_action: 'navigate'
+    });
+    // Bez punktu startowego Google Maps prowadzi z aktualnej lokalizacji urządzenia
+    if (origin) params.set('origin', toParam(origin));
+    if (stops.length > 0) params.set('waypoints', stops.map(toParam).join('|'));
+    return `https://www.google.com/maps/dir/?${params}`;
+};
+
+const getDriverLocation = () => new Promise((resolve) => {
+    if (!('geolocation' in navigator)) {
+        resolve(null);
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(
+        (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 30000 }
+    );
+});
 
 const getRouteStops = ({ chargingStops }) =>
     chargingStops.map(stop => ({ lat: stop.latitude, lng: stop.longitude, name: stop.name }));
@@ -308,9 +335,20 @@ export default function Dashboard() {
         setRouteWaypoints(hasCoordinates ? { start, end, stops } : { start: null, end: null, stops: [] });
         setTripStage(stage);
 
-        if (!hasCoordinates) return;
+        if (hasCoordinates) drawRouteFromCurrentLocation(stage, { start, end, stops });
+    };
+
+    // Trasa na mapie zaczyna się tam, gdzie jest kierowca; bez GPS od punktu z planu
+    const drawRouteFromCurrentLocation = async (stage, { start, end, stops }) => {
+        const location = await getDriverLocation();
+        if (location) {
+            setCurrentLocation(location);
+            setRouteWaypoints(prev => ({ ...prev, origin: location }));
+        }
+
+        const points = stage === 'RETURNING_TO_BASE' ? [location ?? end, start] : [location ?? start, ...stops, end];
         try {
-            const osrmCoords = [start, ...stops, end].map(p => `${p.lng},${p.lat}`).join(';');
+            const osrmCoords = points.map(p => `${p.lng},${p.lat}`).join(';');
             const osrmRes = await fetch(`https://router.project-osrm.org/route/v1/driving/${osrmCoords}?overview=full&geometries=geojson`);
             const osrmData = await osrmRes.json();
             if (osrmData.routes?.length > 0) {
@@ -322,6 +360,17 @@ export default function Dashboard() {
     const handleStartAssignedRoute = (route) => {
         loadAssignedRoute(route, 'PICKUP');
         showMessage('Odbierz pojazd z bazy i dodaj zdjęcie, aby rozpocząć trasę.', 'info');
+    };
+
+    const handleOpenNavigation = async () => {
+        const { start, end, stops } = routeWaypoints;
+        if (!start || !end) return;
+
+        const origin = await getDriverLocation();
+        const url = tripStage === 'RETURNING_TO_BASE' ? buildGoogleMapsUrl(origin, start) : buildGoogleMapsUrl(origin, end, stops);
+        // Przeglądarka może zablokować nową kartę; stan trasy jest w bazie, więc po powrocie etap się odtworzy
+        const navigationTab = window.open(url, '_blank');
+        if (!navigationTab) window.location.href = url;
     };
 
     const handlePhotoUpload = async (e, type) => {
@@ -353,7 +402,10 @@ export default function Dashboard() {
 
         setPhotos({ ...photos, [type]: file });
         showMessage(`Zdjęcie (${type === 'pickup' ? 'Odbiór' : 'Zwrot'}) zapisane lokalnie.`, 'success');
-        if (type === 'pickup') setTripStage('EN_ROUTE');
+        if (type === 'pickup') {
+            setTripStage('EN_ROUTE');
+            handleOpenNavigation();
+        }
     };
 
     const handleSOS = async () => {
@@ -380,6 +432,7 @@ export default function Dashboard() {
 
             setIsNavigating(false);
             setTripStage('RETURNING_TO_BASE');
+            if (routeWaypoints.start) drawRouteFromCurrentLocation('RETURNING_TO_BASE', routeWaypoints);
             showMessage(`Osiągnięto cel! Udaj się do bazy: ${routeResult?.returnBaseName || 'Katowice'}`, 'info');
         } catch (err) {
             console.error(err);
@@ -741,6 +794,7 @@ export default function Dashboard() {
                                 handleSOS={handleSOS} carIcon={carIcon} RouteBoundsController={RouteBoundsController} NavigationController={NavigationController}
                                 newRouteNotification={unreadDriverNotifications[0]} onOpenNotifications={() => setActiveTab('powiadomienia')}
                                 handleStartAssignedRoute={handleStartAssignedRoute}
+                                handleOpenNavigation={handleOpenNavigation}
                             />
                         )}
                         {activeTab === 'powiadomienia' && (
@@ -807,6 +861,7 @@ export default function Dashboard() {
                                 routeResult={routeResult}
                                 onPlanRoute={handlePlanRouteFromBaseAndCargo}
                                 onAssignRoute={handleAssignRouteToDriver}
+                                carIcon={carIcon}
                             />
                         )}
                         {activeTab === 'powiadomienia' && (

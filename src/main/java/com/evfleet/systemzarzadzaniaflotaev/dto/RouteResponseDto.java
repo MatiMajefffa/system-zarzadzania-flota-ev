@@ -8,6 +8,13 @@ import java.util.List;
 @Setter
 public class RouteResponseDto {
     private List<Route> routes;
+    private List<Waypoint> waypoints;
+
+    @Getter
+    @Setter
+    public static class Waypoint {
+        private Double distance; // Odległość punktu od najbliższej drogi na mapie w metrach
+    }
 
     @Getter
     @Setter

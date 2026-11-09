@@ -7,6 +7,7 @@ import WarningIcon from '@mui/icons-material/Warning';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import NavigationIcon from '@mui/icons-material/Navigation';
+import MapIcon from '@mui/icons-material/Map';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 
 const formatDuration = (minutes) => {
@@ -21,7 +22,7 @@ export default function DriverView({
                                        isNavigating, setIsNavigating, handleFinishRoute, handleReturnVehicle,
                                        currentLocation, routeWaypoints, routePath, reportForm, setReportForm,
                                        handleReportDamage, handleSOS, carIcon, RouteBoundsController, NavigationController,
-                                       newRouteNotification, onOpenNotifications, handleStartAssignedRoute
+                                       newRouteNotification, onOpenNotifications, handleStartAssignedRoute, handleOpenNavigation
                                    }) {
     const assignedRoute = lastRoute?.status === 'ZLECONA' ? lastRoute : null;
 
@@ -154,6 +155,9 @@ export default function DriverView({
                         )}
                         {tripStage === 'EN_ROUTE' && (
                             <>
+                                <Button variant="contained" color="success" size="large" startIcon={<MapIcon />} onClick={handleOpenNavigation} disabled={!routeWaypoints.start}>
+                                    Otwórz trasę w Google Maps
+                                </Button>
                                 <Button
                                     variant="contained"
                                     color={isNavigating ? "secondary" : "info"}
@@ -171,6 +175,9 @@ export default function DriverView({
                         )}
                         {tripStage === 'RETURNING_TO_BASE' && (
                             <>
+                                <Button variant="contained" color="info" startIcon={<MapIcon />} onClick={handleOpenNavigation} disabled={!routeWaypoints.start}>
+                                    Nawiguj do bazy w Google Maps
+                                </Button>
                                 <Button component="label" variant="contained" color="warning" startIcon={<PhotoCameraIcon />}>
                                     Zdjęcie po zaparkowaniu (Baza)
                                     <input type="file" hidden accept="image/*" onChange={(e) => handlePhotoUpload(e, 'dropoff')} />

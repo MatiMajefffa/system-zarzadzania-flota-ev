@@ -8,6 +8,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
+import static com.evfleet.systemzarzadzaniaflotaev.service.GeoDistance.haversineKm;
+
 /**
  * Dobiera przystanki ładowania na trasie do celu tak, aby pojazd dojechał i wrócił do bazy
  * z rezerwą energii. Szuka najmniejszej liczby postojów: 0, potem 1, potem 2.
@@ -134,13 +136,5 @@ public class ChargingStopPlanner {
             km[i] = km[i - 1] + haversineKm(previous.get(0), previous.get(1), current.get(0), current.get(1));
         }
         return km;
-    }
-
-    private double haversineKm(double lon1, double lat1, double lon2, double lat2) {
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLon = Math.toRadians(lon2 - lon1);
-        double a = Math.pow(Math.sin(dLat / 2), 2)
-                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) * Math.pow(Math.sin(dLon / 2), 2);
-        return 6371.0 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 }

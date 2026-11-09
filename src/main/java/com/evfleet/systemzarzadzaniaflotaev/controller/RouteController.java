@@ -18,6 +18,7 @@ import com.evfleet.systemzarzadzaniaflotaev.repository.VehicleRepository;
 import com.evfleet.systemzarzadzaniaflotaev.security.SecurityUtils;
 import com.evfleet.systemzarzadzaniaflotaev.service.BatterySimulationService;
 import com.evfleet.systemzarzadzaniaflotaev.service.RoutePlanningService;
+import com.evfleet.systemzarzadzaniaflotaev.service.RouteTrackingService;
 import com.evfleet.systemzarzadzaniaflotaev.service.WeatherService;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +47,7 @@ public class RouteController {
     private final UserRepository userRepository;
     private final ReportRepository reportRepository;
     private final WeatherService weatherService;
+    private final RouteTrackingService routeTrackingService;
     private final BatterySimulationService batterySimulationService;
 
     // Klasa DTO do żądania przypisania trasy kierowcy
@@ -185,6 +187,16 @@ public class RouteController {
         return ResponseEntity.ok(routeEntityRepository.findByStatusInOrderByIdDesc(RouteEntity.ACTIVE_STATUSES));
     }
 
+    // Symulowane pozycje kierowców w trasie (panel menedżera)
+    @GetMapping("/positions")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<List<RouteTrackingService.SimulatedPosition>> getDriverPositions() {
+        LocalDateTime now = LocalDateTime.now();
+        return ResponseEntity.ok(routeEntityRepository.findByStatusInOrderByIdDesc(List.of(RouteEntity.STATUS_IN_PROGRESS)).stream()
+                .flatMap(route -> routeTrackingService.getPosition(route, now).stream())
+                .toList());
+    }
+
     // Kierowca odebrał pojazd i rozpoczyna zleconą trasę
     @PostMapping("/{id}/start")
     @PreAuthorize("hasRole('DRIVER')")
@@ -205,6 +217,7 @@ public class RouteController {
         vehicle.setStatus(VehicleStatus.W_TRASIE);
         vehicleRepository.save(vehicle);
 
+        routeTrackingService.recordPlannedPath(route);
         route.setStatus(RouteEntity.STATUS_IN_PROGRESS);
         route.setStartedAt(LocalDateTime.now());
         notifyManagers(route, "Rozpoczęto trasę " + describeRoute(route));

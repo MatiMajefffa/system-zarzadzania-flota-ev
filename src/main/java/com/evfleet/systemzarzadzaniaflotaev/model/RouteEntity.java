@@ -1,5 +1,6 @@
 package com.evfleet.systemzarzadzaniaflotaev.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -48,6 +49,13 @@ public class RouteEntity {
 
     private String status = STATUS_ASSIGNED;
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    // Przebieg trasy "dł,szer;dł,szer" i planowany czas jazdy, używane do symulacji pozycji
+    @JsonIgnore
+    @Column(columnDefinition = "text")
+    private String pathGeometry;
+    private Double plannedDurationSeconds;
+
     private LocalDateTime startedAt; // Odbiór pojazdu
     private LocalDateTime arrivedAt; // Dojazd do celu
 }
