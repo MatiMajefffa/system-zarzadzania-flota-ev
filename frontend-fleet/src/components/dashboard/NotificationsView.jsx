@@ -4,7 +4,12 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 
-export default function NotificationsView({ notifications: initialNotifications }) {
+export default function NotificationsView({
+                                              notifications: initialNotifications,
+                                              apiBasePath = '/api/reports',
+                                              title = 'Powiadomienia i Zgłoszenia Systemowe',
+                                              onChanged
+                                          }) {
     const [notifications, setNotifications] = useState(initialNotifications);
     const token = localStorage.getItem('token');
 
@@ -16,7 +21,7 @@ export default function NotificationsView({ notifications: initialNotifications 
     const handleMarkAsRead = async (id) => {
         try {
             // Używamy względnej ścieżki /api/... (takiej samej, jak przy usuwaniu, jeśli działało)
-            const response = await fetch(`/api/reports/${id}/status?status=ODCZYTANY`, {
+            const response = await fetch(`${apiBasePath}/${id}/status?status=ODCZYTANY`, {
                 method: 'PATCH',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -29,6 +34,7 @@ export default function NotificationsView({ notifications: initialNotifications 
                 setNotifications(prev =>
                     prev.map(n => String(n.id) === String(id) ? { ...n, status: 'ODCZYTANY' } : n)
                 );
+                onChanged?.();
             } else {
                 console.error("Błąd serwera:", response.status);
             }
@@ -40,7 +46,7 @@ export default function NotificationsView({ notifications: initialNotifications 
     // Obsługa natychmiastowego usuwania (skoro usuwanie działa, zostawiamy ten mechanizm)
     const handleDelete = async (id) => {
         try {
-            const response = await fetch(`/api/reports/${id}`, {
+            const response = await fetch(`${apiBasePath}/${id}`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -49,6 +55,7 @@ export default function NotificationsView({ notifications: initialNotifications 
 
             if (response.ok || response.status === 204) {
                 setNotifications(prev => prev.filter(n => String(n.id) !== String(id)));
+                onChanged?.();
             }
         } catch (error) {
             console.error("Błąd podczas usuwania powiadomienia", error);
@@ -57,7 +64,7 @@ export default function NotificationsView({ notifications: initialNotifications 
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Typography variant="h5">Powiadomienia i Zgłoszenia Systemowe</Typography>
+            <Typography variant="h5">{title}</Typography>
 
             {notifications.length === 0 ? (
                 <Typography color="textSecondary">Brak nowych powiadomień i zgłoszeń.</Typography>
