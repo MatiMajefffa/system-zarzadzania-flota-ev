@@ -95,6 +95,10 @@ const getRoleFromToken = (token) => {
     }
 };
 
+// Backend zwraca pojedynczą stację ładowania, a mapa operuje na liście przystanków
+const getRouteStops = ({ selectedChargingStation: station }) =>
+    station ? [{ lat: station.latitude, lng: station.longitude, name: station.name }] : [];
+
 export default function Dashboard() {
     const token = localStorage.getItem('token');
     const employeeId = localStorage.getItem('employeeId');
@@ -133,6 +137,7 @@ export default function Dashboard() {
 
     const [drivers, setDrivers] = useState([]);
     const [notifications, setNotifications] = useState([]);
+    const [driverNotifications, setDriverNotifications] = useState([]);
     const [selectedVehicle, setSelectedVehicle] = useState(null);
     const [showVehicleDetails, setShowVehicleDetails] = useState(false);
     const [deleteCode, setDeleteCode] = useState('');
@@ -150,6 +155,7 @@ export default function Dashboard() {
                 fetchNotifications();
             } else {
                 fetchLastRoute();
+                fetchDriverNotifications();
             }
         }
     }, [token, userRole]);
@@ -173,6 +179,8 @@ export default function Dashboard() {
             if (watchId) navigator.geolocation.clearWatch(watchId);
         };
     }, [isNavigating]);
+
+    const unreadDriverNotifications = driverNotifications.filter(n => n.status === 'NIEODCZYTANY');
 
     const handleLogout = () => {
         localStorage.removeItem('token');
@@ -226,11 +234,60 @@ export default function Dashboard() {
         } catch (err) { console.error(err); }
     };
 
+    const fetchDriverNotifications = async () => {
+        try {
+            const response = await fetch('/api/driver-notifications', { headers: { Authorization: `Bearer ${token}` } });
+            if (response.ok) setDriverNotifications(await response.json());
+        } catch (err) { console.error(err); }
+    };
+
     const fetchLastRoute = async () => {
         try {
             const response = await fetch(`/api/routes/last?employeeId=${employeeId}`, { headers: { Authorization: `Bearer ${token}` } });
-            if (response.ok) setLastRoute(await response.json());
+            if (response.ok) {
+                const route = await response.json();
+                setLastRoute(route);
+                // Etap podróży jest tylko w pamięci, więc po odświeżeniu strony odtwarzamy go z bazy
+                if (route.status === 'W_TRAKCIE') loadAssignedRoute(route, 'EN_ROUTE');
+            }
         } catch (err) { console.error(err); }
+    };
+
+    const loadAssignedRoute = async (route, stage) => {
+        const hasCoordinates = route.startLat != null && route.endLat != null;
+        const start = { lat: route.startLat, lng: route.startLng, name: route.startAddress };
+        const end = { lat: route.endLat, lng: route.endLng, name: route.endAddress };
+        const stops = route.chargingStopLat != null
+            ? [{ lat: route.chargingStopLat, lng: route.chargingStopLng, name: route.chargingStopName }]
+            : [];
+
+        setRouteResult({
+            assignedRouteId: route.id,
+            assignedVehicleId: route.vehicleId,
+            vehicleRegistrationNumber: route.vehicleRegistrationNumber,
+            distanceKm: route.distanceKm,
+            energyRequiredKWh: route.energyRequiredKWh,
+            vehicleRangeKm: route.vehicleRangeKm,
+            returnBaseName: route.returnBaseName
+        });
+        setRoutePath([]);
+        setRouteWaypoints(hasCoordinates ? { start, end, stops } : { start: null, end: null, stops: [] });
+        setTripStage(stage);
+
+        if (!hasCoordinates) return;
+        try {
+            const osrmCoords = [start, ...stops, end].map(p => `${p.lng},${p.lat}`).join(';');
+            const osrmRes = await fetch(`https://router.project-osrm.org/route/v1/driving/${osrmCoords}?overview=full&geometries=geojson`);
+            const osrmData = await osrmRes.json();
+            if (osrmData.routes?.length > 0) {
+                setRoutePath(osrmData.routes[0].geometry.coordinates.map(c => [c[1], c[0]]));
+            }
+        } catch (e) { console.error(e); }
+    };
+
+    const handleStartAssignedRoute = (route) => {
+        loadAssignedRoute(route, 'PICKUP');
+        showMessage('Odbierz pojazd z bazy i dodaj zdjęcie, aby rozpocząć trasę.', 'info');
     };
 
     const handleAutoAssignRoute = async () => {
@@ -259,10 +316,9 @@ export default function Dashboard() {
             if (response.ok) {
                 const data = await response.json();
                 if (!data.energyRequiredKWh) data.energyRequiredKWh = (data.distanceKm || 50) * 0.18;
-                if (!data.vehicleRangeKm) data.vehicleRangeKm = 300;
 
                 setRouteResult(data);
-                const stops = (data.chargingStops || []).map(s => ({ lat: s.latitude, lng: s.longitude, name: s.stationName }));
+                const stops = getRouteStops(data);
                 setRouteWaypoints({
                     start: { lat: startLat, lng: startLon, name: driverNavForm.startAddress },
                     end: { lat: endLat, lng: endLon, name: driverNavForm.endAddress },
@@ -286,8 +342,34 @@ export default function Dashboard() {
         } catch (err) { showMessage('Błąd serwera.', 'error'); } finally { setLoading(false); }
     };
 
-    const handlePhotoUpload = (e, type) => {
-        setPhotos({ ...photos, [type]: e.target.files[0] });
+    const handlePhotoUpload = async (e, type) => {
+        const file = e.target.files[0];
+
+        // Zdjęcie przy odbiorze rozpoczyna zleconą trasę
+        if (type === 'pickup' && routeResult?.assignedRouteId) {
+            try {
+                const response = await fetch(`/api/routes/${routeResult.assignedRouteId}/start`, {
+                    method: 'POST', headers: { Authorization: `Bearer ${token}` }
+                });
+                if (!response.ok) {
+                    showMessage(await response.text(), 'error');
+                    setTripStage('IDLE');
+                    setRouteResult(null);
+                    setRoutePath([]);
+                    setRouteWaypoints({ start: null, end: null, stops: [] });
+                    fetchLastRoute();
+                    return;
+                }
+                setLastRoute(await response.json());
+            } catch (err) {
+                console.error(err);
+                e.target.value = '';
+                showMessage('Błąd połączenia. Spróbuj ponownie.', 'error');
+                return;
+            }
+        }
+
+        setPhotos({ ...photos, [type]: file });
         showMessage(`Zdjęcie (${type === 'pickup' ? 'Odbiór' : 'Zwrot'}) zapisane lokalnie.`, 'success');
         if (type === 'pickup') setTripStage('EN_ROUTE');
     };
@@ -318,7 +400,10 @@ export default function Dashboard() {
         setLoading(true);
         try {
             const baseName = routeResult?.returnBaseName || 'Katowice';
-            const response = await fetch(`/api/vehicles/${routeResult.assignedVehicleId}/return?baseName=${encodeURIComponent(baseName)}`, {
+            const url = routeResult.assignedRouteId
+                ? `/api/routes/${routeResult.assignedRouteId}/finish`
+                : `/api/vehicles/${routeResult.assignedVehicleId}/return?baseName=${encodeURIComponent(baseName)}`;
+            const response = await fetch(url, {
                 method: 'POST', headers: { Authorization: `Bearer ${token}` }
             });
 
@@ -329,6 +414,8 @@ export default function Dashboard() {
                 setPhotos({ pickup: null, dropoff: null });
                 setDriverNavForm({ startAddress: '', endAddress: '' });
                 fetchLastRoute();
+            } else {
+                showMessage(await response.text() || 'Nie udało się zwrócić pojazdu.', 'error');
             }
         } catch (err) { showMessage('Błąd zwrotu pojazdu.', 'error'); } finally { setLoading(false); }
     };
@@ -480,10 +567,9 @@ export default function Dashboard() {
             if (response.ok) {
                 const data = await response.json();
                 if (!data.energyRequiredKWh) data.energyRequiredKWh = (data.distanceKm || 50) * 0.18;
-                if (!data.vehicleRangeKm) data.vehicleRangeKm = 300;
 
                 setRouteResult(data);
-                const stops = (data.chargingStops || []).map(s => ({ lat: s.latitude, lng: s.longitude, name: s.stationName }));
+                const stops = getRouteStops(data);
                 setRouteWaypoints({
                     start: { lat: startLat, lng: startLon, name: formData.startBase },
                     end: { lat: endLat, lng: endLon, name: formData.destination },
@@ -557,6 +643,14 @@ export default function Dashboard() {
                                     <ListItemIcon><PersonIcon color={activeTab === 'panel-kierowcy' ? 'primary' : 'inherit'} /></ListItemIcon>
                                     <ListItemText primary="Moja Trasa" />
                                 </ListItem>
+                                <ListItem button selected={activeTab === 'powiadomienia'} onClick={() => setActiveTab('powiadomienia')}>
+                                    <ListItemIcon>
+                                        <Badge badgeContent={unreadDriverNotifications.length} color="error">
+                                            <NotificationsIcon color={activeTab === 'powiadomienia' ? 'primary' : 'inherit'} />
+                                        </Badge>
+                                    </ListItemIcon>
+                                    <ListItemText primary="Powiadomienia" />
+                                </ListItem>
                                 <ListItem button selected={activeTab === 'mapa'} onClick={() => setActiveTab('mapa')}>
                                     <ListItemIcon><MapIcon color={activeTab === 'mapa' ? 'primary' : 'inherit'} /></ListItemIcon>
                                     <ListItemText primary="Stacje Ładowania" />
@@ -610,6 +704,16 @@ export default function Dashboard() {
                                 handleReturnVehicle={handleReturnVehicle} currentLocation={currentLocation} routeWaypoints={routeWaypoints}
                                 routePath={routePath} reportForm={reportForm} setReportForm={setReportForm} handleReportDamage={handleReportDamage}
                                 handleSOS={handleSOS} carIcon={carIcon} RouteBoundsController={RouteBoundsController} NavigationController={NavigationController}
+                                newRouteNotification={unreadDriverNotifications[0]} onOpenNotifications={() => setActiveTab('powiadomienia')}
+                                handleStartAssignedRoute={handleStartAssignedRoute}
+                            />
+                        )}
+                        {activeTab === 'powiadomienia' && (
+                            <NotificationsView
+                                notifications={driverNotifications}
+                                apiBasePath="/api/driver-notifications"
+                                title="Moje Powiadomienia"
+                                onChanged={fetchDriverNotifications}
                             />
                         )}
                         {activeTab === 'mapa' && (
@@ -647,7 +751,10 @@ export default function Dashboard() {
                                 vehicles={vehicles}
                                 bases={bases}
                                 drivers={drivers}
+                                message={message}
+                                setMessage={setMessage}
                                 onRoutePlanned={handlePlanRouteFromBaseAndCargo}
+                                onRouteAssigned={() => setRouteResult(prev => ({ ...prev, assigned: true }))}
                                 routePath={routePath}
                                 routeWaypoints={routeWaypoints}
                                 routeResult={routeResult}

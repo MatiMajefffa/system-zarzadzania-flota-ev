@@ -12,11 +12,21 @@ export default function DriverView({
                                        handleAutoAssignRoute, loading, routeResult, photos, handlePhotoUpload,
                                        isNavigating, setIsNavigating, handleFinishRoute, handleReturnVehicle,
                                        currentLocation, routeWaypoints, routePath, reportForm, setReportForm,
-                                       handleReportDamage, handleSOS, carIcon, RouteBoundsController, NavigationController
+                                       handleReportDamage, handleSOS, carIcon, RouteBoundsController, NavigationController,
+                                       newRouteNotification, onOpenNotifications, handleStartAssignedRoute
                                    }) {
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {message.text && <Alert severity={message.type} onClose={() => setMessage({ text: '' })}>{message.text}</Alert>}
+
+            {newRouteNotification && (
+                <Alert
+                    severity="info"
+                    action={<Button color="inherit" size="small" onClick={onOpenNotifications}>Zobacz</Button>}
+                >
+                    {newRouteNotification.description}
+                </Alert>
+            )}
 
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Typography variant="h5" fontWeight="bold">Panel Kierowcy - Zlecenia i Trasy</Typography>
@@ -46,6 +56,11 @@ export default function DriverView({
                                         <Typography variant="caption" color="success.main" sx={{ mt: 1, fontWeight: 'bold' }}>
                                             Status: {lastRoute.status || 'ZLECONA'}
                                         </Typography>
+                                        {lastRoute.status === 'ZLECONA' && (
+                                            <Button variant="contained" startIcon={<NavigationIcon />} onClick={() => handleStartAssignedRoute(lastRoute)} sx={{ mt: 1 }}>
+                                                Rozpocznij trasę
+                                            </Button>
+                                        )}
                                     </Box>
                                 ) : (
                                     <Typography color="textSecondary" sx={{ mt: 2 }}>
