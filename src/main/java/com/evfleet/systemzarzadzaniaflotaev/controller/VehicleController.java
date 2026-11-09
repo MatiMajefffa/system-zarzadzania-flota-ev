@@ -1,8 +1,11 @@
 package com.evfleet.systemzarzadzaniaflotaev.controller;
 
+import com.evfleet.systemzarzadzaniaflotaev.dto.VehicleDetailsDto;
 import com.evfleet.systemzarzadzaniaflotaev.dto.VehicleDto;
 import com.evfleet.systemzarzadzaniaflotaev.model.VehicleStatus;
+import com.evfleet.systemzarzadzaniaflotaev.model.VehicleType;
 import com.evfleet.systemzarzadzaniaflotaev.service.VehicleService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -51,7 +54,7 @@ public class VehicleController {
     // Dodawanie / Zapisywanie pojazdu
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-    public ResponseEntity<VehicleDto> saveVehicle(@RequestBody VehicleDto dto) {
+    public ResponseEntity<VehicleDto> saveVehicle(@Valid @RequestBody VehicleDto dto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(vehicleService.saveVehicle(dto));
     }
 
@@ -70,6 +73,22 @@ public class VehicleController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<VehicleDto> toggleBlockVehicle(@PathVariable Long id) {
         return ResponseEntity.ok(vehicleService.toggleBlockVehicle(id));
+    }
+
+    public record VehicleSettingsRequest(VehicleType vehicleType, VehicleStatus status) {
+    }
+
+    @PatchMapping("/{id}/settings")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<VehicleDto> updateVehicleSettings(@PathVariable Long id, @RequestBody VehicleSettingsRequest request) {
+        return ResponseEntity.ok(vehicleService.updateVehicleSettings(id, request.vehicleType(), request.status()));
+    }
+
+    // Ostatnia trasa, aktualne zlecenie i zgłoszenia pojazdu
+    @GetMapping("/{id}/details")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<VehicleDetailsDto> getVehicleDetails(@PathVariable Long id) {
+        return ResponseEntity.ok(vehicleService.getVehicleDetails(id));
     }
 
     // Ręczne uruchomienie ładowania pojazdu w bazie

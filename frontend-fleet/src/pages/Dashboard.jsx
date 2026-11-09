@@ -12,6 +12,7 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import PersonIcon from '@mui/icons-material/Person';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import WarningIcon from '@mui/icons-material/Warning';
+import PlaceIcon from '@mui/icons-material/Place';
 
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 // Import podkomponentów
@@ -22,6 +23,7 @@ import RoutesView from '../components/dashboard/RoutesView';
 import DriversView from '../components/dashboard/DriversView';
 import NotificationsView from '../components/dashboard/NotificationsView';
 import DriverReportsView from '../components/dashboard/DriverReportsView';
+import FleetPositionsView from '../components/dashboard/FleetPositionsView';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -88,7 +90,12 @@ const getRoleFromToken = (token) => {
     }
 };
 
-const buildGoogleMapsUrl = (origin, destination, stops = []) => {
+const EMPTY_VEHICLE_FORM = {
+    registrationNumber: '', model: '', vehicleType: '', batteryCapacityKWh: '',
+    stateOfCharge: '', totalMileage: '', status: 'DOSTEPNY', currentBase: ''
+};
+
+const buildGoogleMapsUrl =(origin, destination, stops = []) => {
     const toParam = (point) => `${point.lat},${point.lng}`;
     const params = new URLSearchParams({
         api: '1',
@@ -139,7 +146,7 @@ export default function Dashboard() {
 
     const [showVehicleForm, setShowVehicleForm] = useState(false);
     const [newVehicle, setNewVehicle] = useState({
-        registrationNumber: '', model: '', batteryCapacityKWh: '', stateOfCharge: '', status: 'DOSTEPNY'
+        ...EMPTY_VEHICLE_FORM
     });
 
     const [routeForm, setRouteForm] = useState({ vehicleId: '', startAddress: '', endAddress: '' });
@@ -442,6 +449,22 @@ export default function Dashboard() {
         } catch (err) { showMessage('Błąd zwrotu pojazdu.', 'error'); } finally { setLoading(false); }
     };
 
+    const handleUpdateVehicleSettings = async (vehicleId, settings) => {
+        try {
+            const response = await fetch(`/api/vehicles/${vehicleId}/settings`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify(settings)
+            });
+            showMessage(
+                response.ok ? 'Zapisano zmiany pojazdu.' : 'Nie można teraz zmienić tego pojazdu.',
+                response.ok ? 'success' : 'error'
+            );
+            setShowVehicleDetails(false);
+            fetchVehicles();
+        } catch (e) { showMessage('Błąd łączenia z serwerem.', 'error'); }
+    };
+
     const handleStartCharging = async (vehicleId) => {
         try {
             const response = await fetch(`/api/vehicles/${vehicleId}/charge`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
@@ -518,12 +541,17 @@ export default function Dashboard() {
     };
 
     const handleAddVehicle = async (e) => {
-        e.preventDefault(); setLoading(true);
+        e.preventDefault();
+        if (!newVehicle.vehicleType || !newVehicle.currentBase) return showMessage('Wybierz typ pojazdu i bazę.', 'warning');
+
+        setLoading(true);
         const payload = {
-            registrationNumber: newVehicle.registrationNumber,
-            model: newVehicle.model,
+            registrationNumber: newVehicle.registrationNumber.trim().toUpperCase(),
+            model: newVehicle.model.trim(),
+            vehicleType: newVehicle.vehicleType,
             batteryCapacityKWh: parseFloat(newVehicle.batteryCapacityKWh),
             stateOfCharge: parseInt(newVehicle.stateOfCharge, 10),
+            totalMileage: parseFloat(newVehicle.totalMileage),
             status: newVehicle.status,
             currentBase: newVehicle.currentBase
         };
@@ -536,10 +564,10 @@ export default function Dashboard() {
             if (res.ok) {
                 showMessage('Dodano pojazd!', 'success');
                 setShowVehicleForm(false);
-                setNewVehicle({ registrationNumber: '', model: '', batteryCapacityKWh: '', stateOfCharge: '', status: 'DOSTEPNY', currentBase: '' });
+                setNewVehicle(EMPTY_VEHICLE_FORM);
                 fetchVehicles();
             } else {
-                showMessage('Błąd podczas dodawania pojazdu.', 'error');
+                showMessage(res.status === 409 ? 'Pojazd o takim numerze rejestracyjnym już istnieje.' : 'Sprawdź poprawność danych pojazdu.', 'error');
             }
         } catch (e) { showMessage('Błąd połączenia.', 'error'); } finally { setLoading(false); }
     };
@@ -741,6 +769,10 @@ export default function Dashboard() {
                                     <ListItemIcon><PersonIcon color={activeTab === 'kierowcy' ? 'primary' : 'inherit'} /></ListItemIcon>
                                     <ListItemText primary="Kierowcy & Zlecenia" />
                                 </ListItem>
+                                <ListItem button selected={activeTab === 'pozycje'} onClick={() => setActiveTab('pozycje')}>
+                                    <ListItemIcon><PlaceIcon color={activeTab === 'pozycje' ? 'primary' : 'inherit'} /></ListItemIcon>
+                                    <ListItemText primary="Pozycje Aut" />
+                                </ListItem>
                             </>
                         )}
                     </List>
@@ -803,7 +835,7 @@ export default function Dashboard() {
                                 message={message} setMessage={setMessage} showVehicleForm={showVehicleForm} setShowVehicleForm={setShowVehicleForm}
                                 newVehicle={newVehicle} setNewVehicle={setNewVehicle} bases={bases} handleAddVehicle={handleAddVehicle}
                                 loading={loading} vehicles={vehicles} setSelectedVehicle={setSelectedVehicle} setShowVehicleDetails={setShowVehicleDetails}
-                                showVehicleDetails={showVehicleDetails} selectedVehicle={selectedVehicle} handleToggleBlockVehicle={handleToggleBlockVehicle} handleStartCharging={handleStartCharging}
+                                showVehicleDetails={showVehicleDetails} selectedVehicle={selectedVehicle} handleToggleBlockVehicle={handleToggleBlockVehicle} handleStartCharging={handleStartCharging} handleUpdateVehicleSettings={handleUpdateVehicleSettings}
                                 deleteCode={deleteCode} setDeleteCode={setDeleteCode} handleDeleteVehicle={handleDeleteVehicle} baseIcon={baseIcon}
                             />
                         )}
@@ -821,6 +853,16 @@ export default function Dashboard() {
                                 routePath={routePath}
                                 routeWaypoints={routeWaypoints}
                                 routeResult={routeResult}
+                            />
+                        )}
+                        {activeTab === 'pozycje' && (
+                            <FleetPositionsView
+                                vehicles={vehicles}
+                                bases={bases}
+                                activeRoutes={activeRoutes}
+                                drivers={drivers}
+                                carIcon={carIcon}
+                                baseIcon={baseIcon}
                             />
                         )}
                         {activeTab === 'kierowcy' && (

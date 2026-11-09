@@ -7,6 +7,7 @@ import AssignmentIcon from '@mui/icons-material/Assignment';
 import MailOutlineIcon from '@mui/icons-material/MailOutlined';
 import MapIcon from '@mui/icons-material/Map';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { getPhaseLabel, useDriverPositions } from './driverPositions';
 import RouteStatusChip from './RouteStatusChip';
 import RoutePlanDetails from './RoutePlanDetails';
 
@@ -16,14 +17,6 @@ const MAX_MESSAGE_LENGTH = 900;
 const formatTime = (value) => new Date(value).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
 
 const getDriverName = (driver) => (driver.firstName ? `${driver.firstName} ${driver.lastName}` : driver.email);
-
-const getPhaseLabel = (position) => ({
-    DO_CELU: 'W drodze do celu',
-    LADOWANIE: `Ładowanie: ${position.stationName}`,
-    NA_MIEJSCU: 'Na miejscu',
-    POWROT: 'Powrót do bazy',
-    W_BAZIE: 'W bazie, oczekuje na zwrot auta'
-}[position.phase]);
 
 function MapFocus({ target }) {
     const map = useMap();
@@ -158,25 +151,9 @@ function SendMessageDialog({ driver, onClose, onSent }) {
 }
 
 export default function DriversView({ drivers, bases, activeRoutes, message, loading, routeResult, onPlanRoute, onAssignRoute, carIcon }) {
-    const [positions, setPositions] = useState([]);
+    const positions = useDriverPositions();
     const [mapTarget, setMapTarget] = useState(null);
     const mapSectionRef = useRef(null);
-
-    useEffect(() => {
-        const fetchPositions = async () => {
-            try {
-                const response = await fetch('/api/routes/positions', {
-                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-                });
-                if (response.ok) setPositions(await response.json());
-            } catch (err) {
-                console.error(err);
-            }
-        };
-        fetchPositions();
-        const intervalId = setInterval(fetchPositions, 5000);
-        return () => clearInterval(intervalId);
-    }, []);
 
     const [onlyActive, setOnlyActive] = useState(false);
     const [assignTarget, setAssignTarget] = useState(null);

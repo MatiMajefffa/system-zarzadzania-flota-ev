@@ -21,6 +21,8 @@ public interface VehicleRepository extends JpaRepository<Vehicle, Long> {
     // Znajdź pojazdy, których stan naładowania (SoC) jest mniejszy niż podany próg (np. niski stan baterii)
     List<Vehicle> findByStateOfChargeLessThan(Integer maxSoC);
 
+    boolean existsByRegistrationNumber(String registrationNumber);
+
     // Blokada wiersza, aby dwa równoczesne zlecenia nie zarezerwowały tego samego pojazdu
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select v from Vehicle v where v.id = :id")

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -58,4 +59,10 @@ public class RouteEntity {
 
     private LocalDateTime startedAt; // Odbiór pojazdu
     private LocalDateTime arrivedAt; // Dojazd do celu
+
+    // Czas jazdy od odbioru pojazdu do dojazdu; null dla tras bez zapisanych czasów
+    @JsonIgnore
+    public Long getDrivingMinutes() {
+        return startedAt == null || arrivedAt == null ? null : Duration.between(startedAt, arrivedAt).toMinutes();
+    }
 }

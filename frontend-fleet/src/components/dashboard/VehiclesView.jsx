@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Box, Typography, Button, Paper, Alert, Table, TableBody, TableCell,
     TableContainer, TableHead, TableRow, IconButton, Dialog, DialogTitle,
@@ -11,14 +11,80 @@ import InfoIcon from '@mui/icons-material/Info';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 
+const VEHICLE_TYPE_LABELS = { OSOBOWY: 'Osobowy', MALY_DOSTAWCZAK: 'Mały dostawczy', DUZY_DOSTAWCZAK: 'Duży dostawczy' };
+const ROUTE_STATUS_LABELS = { ZLECONA: 'Oczekuje na rozpoczęcie', W_TRAKCIE: 'W trakcie', ZAKONCZONA: 'Zakończona' };
+
+const formatDate = (value) => new Date(value).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' });
+
+function RouteSummary({ title, route }) {
+    return (
+        <>
+            <Typography variant="subtitle1" sx={{ mt: 2 }}><strong>{title}</strong></Typography>
+            {route ? (
+                <>
+                    <Typography variant="body2">{route.startAddress} → {route.endAddress}</Typography>
+                    <Typography variant="body2">Kierowca: {route.driverName}</Typography>
+                    <Typography variant="body2">Status: {ROUTE_STATUS_LABELS[route.status] ?? route.status}</Typography>
+                    {route.distanceKm != null && <Typography variant="body2">Dystans: {route.distanceKm.toFixed(1)} km</Typography>}
+                    {route.startedAt && <Typography variant="body2">Odbiór auta: {formatDate(route.startedAt)}</Typography>}
+                    {route.drivingMinutes != null && <Typography variant="body2">Czas dojazdu: {route.drivingMinutes} min</Typography>}
+                </>
+            ) : (
+                <Typography variant="body2" color="text.secondary">Brak</Typography>
+            )}
+        </>
+    );
+}
+
+function VehicleSettingsForm({ vehicle, onSave }) {
+    const [vehicleType, setVehicleType] = useState(vehicle.vehicleType ?? '');
+    const [status, setStatus] = useState(vehicle.status);
+    const isEditable = vehicle.status === 'DOSTEPNY' || vehicle.status === 'SERWIS';
+    const isChanged = vehicleType !== (vehicle.vehicleType ?? '') || status !== vehicle.status;
+
+    if (!isEditable) {
+        return <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Typ i status można zmienić, gdy auto nie jest w trasie ani się nie ładuje.</Typography>;
+    }
+
+    return (
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', mt: 2 }}>
+            <TextField select size="small" label="Typ pojazdu" sx={{ minWidth: 170 }} value={vehicleType} onChange={(e) => setVehicleType(e.target.value)}>
+                {Object.entries(VEHICLE_TYPE_LABELS).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
+            </TextField>
+            <TextField select size="small" label="Status" sx={{ minWidth: 130 }} value={status} onChange={(e) => setStatus(e.target.value)}>
+                <MenuItem value="DOSTEPNY">Dostępny</MenuItem>
+                <MenuItem value="SERWIS">Serwis</MenuItem>
+            </TextField>
+            <Button variant="contained" size="small" disabled={!vehicleType || !isChanged} onClick={() => onSave(vehicle.id, { vehicleType, status })}>
+                Zapisz
+            </Button>
+        </Box>
+    );
+}
+
 export default function VehiclesView({
                                          message, setMessage, showVehicleForm, setShowVehicleForm, newVehicle,
                                          setNewVehicle, bases, handleAddVehicle, loading, vehicles, setSelectedVehicle,
                                          setShowVehicleDetails, showVehicleDetails, selectedVehicle: selectedVehicleSnapshot, handleToggleBlockVehicle,
-                                         deleteCode, setDeleteCode, handleDeleteVehicle, baseIcon, handleStartCharging
+                                         deleteCode, setDeleteCode, handleDeleteVehicle, baseIcon, handleStartCharging, handleUpdateVehicleSettings
                                      }) {
     // Lista odświeża się w tle, więc szczegóły pokazują aktualną baterię i przebieg
     const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleSnapshot?.id) ?? selectedVehicleSnapshot;
+    const [details, setDetails] = useState(null);
+
+    useEffect(() => {
+        if (!showVehicleDetails || !selectedVehicle?.id) return undefined;
+
+        let isCurrent = true;
+        fetch(`/api/vehicles/${selectedVehicle.id}/details`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+            .then((response) => (response.ok ? response.json() : null))
+            .then((data) => { if (isCurrent) setDetails(data); })
+            .catch(console.error);
+        return () => {
+            isCurrent = false;
+            setDetails(null);
+        };
+    }, [showVehicleDetails, selectedVehicle?.id, selectedVehicle?.status]);
 
     const formatMileage = (vehicle) => `${Math.round(vehicle.totalMileage ?? 0).toLocaleString('pl-PL')} km`;
 
@@ -47,14 +113,19 @@ export default function VehiclesView({
                     <Box component="form" onSubmit={handleAddVehicle} sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
                         <TextField required label="Nr rejestracyjny" size="small" value={newVehicle.registrationNumber} onChange={(e) => setNewVehicle({ ...newVehicle, registrationNumber: e.target.value })} />
                         <TextField required label="Model" size="small" value={newVehicle.model} onChange={(e) => setNewVehicle({ ...newVehicle, model: e.target.value })} />
-                        <TextField required label="Bateria (kWh)" type="number" size="small" value={newVehicle.batteryCapacityKWh} onChange={(e) => setNewVehicle({ ...newVehicle, batteryCapacityKWh: e.target.value })} />
-                        <TextField required label="Naładowanie (%)" type="number" size="small" value={newVehicle.stateOfCharge} onChange={(e) => setNewVehicle({ ...newVehicle, stateOfCharge: e.target.value })} />
+                        <TextField
+                            required select label="Typ pojazdu" size="small" sx={{ minWidth: 200 }} value={newVehicle.vehicleType}
+                            onChange={(e) => setNewVehicle({ ...newVehicle, vehicleType: e.target.value })}
+                        >
+                            {Object.entries(VEHICLE_TYPE_LABELS).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
+                        </TextField>
+                        <TextField required label="Bateria (kWh)" type="number" size="small" slotProps={{ htmlInput: { min: 1, step: 'any' } }} value={newVehicle.batteryCapacityKWh} onChange={(e) => setNewVehicle({ ...newVehicle, batteryCapacityKWh: e.target.value })} />
+                        <TextField required label="Naładowanie (%)" type="number" size="small" slotProps={{ htmlInput: { min: 0, max: 100, step: 1 } }} value={newVehicle.stateOfCharge} onChange={(e) => setNewVehicle({ ...newVehicle, stateOfCharge: e.target.value })} />
+                        <TextField required label="Przebieg (km)" type="number" size="small" slotProps={{ htmlInput: { min: 0, step: 'any' } }} value={newVehicle.totalMileage} onChange={(e) => setNewVehicle({ ...newVehicle, totalMileage: e.target.value })} />
                         <FormControl size="small" sx={{ minWidth: 150 }}>
                             <InputLabel>Status</InputLabel>
                             <Select value={newVehicle.status} label="Status" onChange={(e) => setNewVehicle({ ...newVehicle, status: e.target.value })}>
                                 <MenuItem value="DOSTEPNY">Dostępny</MenuItem>
-                                <MenuItem value="W_TRASIE">W trasie</MenuItem>
-                                <MenuItem value="LADOWANIE">Ładuje się</MenuItem>
                                 <MenuItem value="SERWIS">Serwis</MenuItem>
                             </Select>
                         </FormControl>
@@ -119,6 +190,18 @@ export default function VehiclesView({
                                     <Typography variant="subtitle1"><strong>Aktualna Baza:</strong> {selectedVehicle.currentBase || 'Katowice'}</Typography>
                                     <Typography variant="subtitle1"><strong>Bateria:</strong> {selectedVehicle.stateOfCharge}%</Typography>
                                     <Typography variant="subtitle1"><strong>Status:</strong> {getStatusLabel(selectedVehicle)}</Typography>
+                                    {details && (
+                                        <>
+                                            <Typography variant="subtitle1"><strong>Typ:</strong> {VEHICLE_TYPE_LABELS[details.vehicleType] ?? 'Nie określono'}</Typography>
+                                            <Typography variant="subtitle1"><strong>Szacowany zasięg:</strong> {Math.round(details.estimatedRangeKm)} km</Typography>
+                                            <Typography variant="subtitle1"><strong>Zakończone trasy:</strong> {details.finishedRoutes}</Typography>
+                                        </>
+                                    )}
+                                    <VehicleSettingsForm
+                                        key={`${selectedVehicle.id}-${selectedVehicle.status}-${selectedVehicle.vehicleType}`}
+                                        vehicle={selectedVehicle}
+                                        onSave={handleUpdateVehicleSettings}
+                                    />
                                     <Button
                                         variant="outlined"
                                         sx={{ mt: 1 }}
@@ -158,14 +241,17 @@ export default function VehiclesView({
                                         </Box>
                                     )}
                                     <Divider sx={{ my: 2 }} />
+                                    <RouteSummary title="Aktualne zlecenie" route={details?.activeRoute} />
+                                    <RouteSummary title="Ostatnia zakończona trasa" route={details?.lastRoute} />
+                                    <Divider sx={{ my: 2 }} />
                                     <Typography variant="h6" color="error">Notatki i Zgłoszenia:</Typography>
                                     <List dense>
-                                        {selectedVehicle.reports && selectedVehicle.reports.length > 0 ? (
-                                            selectedVehicle.reports.map((report, index) => (
+                                        {details?.reports?.length > 0 ? (
+                                            details.reports.map((report, index) => (
                                                 <ListItem key={index}>
                                                     <ListItemText
                                                         primary={report.description}
-                                                        secondary={`Zgłosił ID pracownika: ${report.employeeId || 'Nieznany'}`}
+                                                        secondary={`${formatDate(report.createdAt)}, ID pracownika: ${report.employeeId || 'Nieznany'}${report.type === 'SOS' ? ', SOS' : ''}`}
                                                     />
                                                 </ListItem>
                                             ))

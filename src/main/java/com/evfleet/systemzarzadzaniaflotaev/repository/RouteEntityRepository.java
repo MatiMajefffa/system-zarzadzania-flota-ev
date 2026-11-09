@@ -17,4 +17,8 @@ public interface RouteEntityRepository extends JpaRepository<RouteEntity, Long> 
     boolean existsByEmployeeIdAndStatusIn(String employeeId, Collection<String> statuses);
 
     boolean existsByVehicleIdAndStatusIn(Long vehicleId, Collection<String> statuses);
+
+    Optional<RouteEntity> findTopByVehicleIdAndStatusInOrderByIdDesc(Long vehicleId, Collection<String> statuses);
+
+    long countByVehicleIdAndStatus(Long vehicleId, String status);
 }

@@ -29,7 +29,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
@@ -271,16 +270,9 @@ public class RouteController {
         String employeeId = String.valueOf(SecurityUtils.getCurrentUserId());
         List<RouteHistoryDto> history = routeEntityRepository
                 .findTop10ByEmployeeIdAndStatusOrderByIdDesc(employeeId, RouteEntity.STATUS_FINISHED).stream()
-                .map(route -> new RouteHistoryDto(route.getId(), route.getStartAddress(), route.getEndAddress(), getDurationMinutes(route)))
+                .map(route -> new RouteHistoryDto(route.getId(), route.getStartAddress(), route.getEndAddress(), route.getDrivingMinutes()))
                 .toList();
         return ResponseEntity.ok(history);
-    }
-
-    private static Long getDurationMinutes(RouteEntity route) {
-        if (route.getStartedAt() == null || route.getArrivedAt() == null) {
-            return null;
-        }
-        return Duration.between(route.getStartedAt(), route.getArrivedAt()).toMinutes();
     }
 
     // Kierowca zwrócił pojazd do bazy - zakończenie trasy zwalnia rezerwację
