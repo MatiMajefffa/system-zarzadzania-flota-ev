@@ -14,9 +14,22 @@ import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 export default function VehiclesView({
                                          message, setMessage, showVehicleForm, setShowVehicleForm, newVehicle,
                                          setNewVehicle, bases, handleAddVehicle, loading, vehicles, setSelectedVehicle,
-                                         setShowVehicleDetails, showVehicleDetails, selectedVehicle, handleToggleBlockVehicle,
-                                         deleteCode, setDeleteCode, handleDeleteVehicle, baseIcon
+                                         setShowVehicleDetails, showVehicleDetails, selectedVehicle: selectedVehicleSnapshot, handleToggleBlockVehicle,
+                                         deleteCode, setDeleteCode, handleDeleteVehicle, baseIcon, handleStartCharging
                                      }) {
+    // Lista odświeża się w tle, więc szczegóły pokazują aktualną baterię i przebieg
+    const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleSnapshot?.id) ?? selectedVehicleSnapshot;
+
+    const formatMileage = (vehicle) => `${Math.round(vehicle.totalMileage ?? 0).toLocaleString('pl-PL')} km`;
+
+    const getStatusLabel = (vehicle) => {
+        if (vehicle.isBlocked) return 'ZABLOKOWANY';
+        if (vehicle.status === 'LADOWANIE' && vehicle.chargingEndsAt) {
+            return `Ładowanie do ${new Date(vehicle.chargingEndsAt).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}`;
+        }
+        return vehicle.status;
+    };
+
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {message.text && <Alert severity={message.type} onClose={() => setMessage({ text: '' })}>{message.text}</Alert>}
@@ -66,13 +79,14 @@ export default function VehiclesView({
                             <TableCell><strong>Rejestracja</strong></TableCell>
                             <TableCell><strong>Model</strong></TableCell>
                             <TableCell><strong>Bateria / SoC</strong></TableCell>
+                            <TableCell><strong>Przebieg</strong></TableCell>
                             <TableCell><strong>Status</strong></TableCell>
                             <TableCell align="right"><strong>Szczegóły</strong></TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
                         {vehicles.length === 0 ? (
-                            <TableRow><TableCell colSpan={6} align="center">Brak pojazdów.</TableCell></TableRow>
+                            <TableRow><TableCell colSpan={7} align="center">Brak pojazdów.</TableCell></TableRow>
                         ) : (
                             vehicles.map((v) => (
                                 <TableRow key={v.id} sx={{ opacity: v.isBlocked ? 0.5 : 1 }}>
@@ -80,7 +94,8 @@ export default function VehiclesView({
                                     <TableCell>{v.registrationNumber}</TableCell>
                                     <TableCell>{v.model}</TableCell>
                                     <TableCell>{v.batteryCapacityKWh} kWh / {v.stateOfCharge}%</TableCell>
-                                    <TableCell>{v.isBlocked ? 'ZABLOKOWANY' : v.status}</TableCell>
+                                    <TableCell>{formatMileage(v)}</TableCell>
+                                    <TableCell>{getStatusLabel(v)}</TableCell>
                                     <TableCell align="right">
                                         <IconButton color="info" onClick={() => { setSelectedVehicle(v); setShowVehicleDetails(true); }}>
                                             <InfoIcon />
@@ -100,8 +115,18 @@ export default function VehiclesView({
                         <DialogContent dividers>
                             <Grid container spacing={3}>
                                 <Grid item xs={12} md={6}>
-                                    <Typography variant="subtitle1"><strong>Przebieg całkowity:</strong> {selectedVehicle.totalMileage || 12450} km</Typography>
+                                    <Typography variant="subtitle1"><strong>Przebieg całkowity:</strong> {formatMileage(selectedVehicle)}</Typography>
                                     <Typography variant="subtitle1"><strong>Aktualna Baza:</strong> {selectedVehicle.currentBase || 'Katowice'}</Typography>
+                                    <Typography variant="subtitle1"><strong>Bateria:</strong> {selectedVehicle.stateOfCharge}%</Typography>
+                                    <Typography variant="subtitle1"><strong>Status:</strong> {getStatusLabel(selectedVehicle)}</Typography>
+                                    <Button
+                                        variant="outlined"
+                                        sx={{ mt: 1 }}
+                                        disabled={selectedVehicle.status !== 'DOSTEPNY' || selectedVehicle.stateOfCharge >= 100}
+                                        onClick={() => handleStartCharging(selectedVehicle.id)}
+                                    >
+                                        Naładuj w bazie
+                                    </Button>
 
                                     <FormControlLabel
                                         control={<Switch checked={selectedVehicle.isBlocked || false} onChange={() => handleToggleBlockVehicle(selectedVehicle.id)} color="error" />}
