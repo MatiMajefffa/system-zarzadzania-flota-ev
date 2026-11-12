@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
+import WarningIcon from '@mui/icons-material/Warning';
+import ReportDialog from './ReportDialog';
 import {
-    Box, Typography, Button, TextField, Paper, Alert, Grid,
+    Box, Typography, Button, Paper, Alert, Grid,
     TableContainer, Table, TableHead, TableRow, TableCell, TableBody
 } from '@mui/material';
-import WarningIcon from '@mui/icons-material/Warning';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import NavigationIcon from '@mui/icons-material/Navigation';
+import MapIcon from '@mui/icons-material/Map';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 
 const formatDuration = (minutes) => {
@@ -17,12 +19,13 @@ const formatDuration = (minutes) => {
 
 export default function DriverView({
                                        message, setMessage, tripStage, lastRoute, routeHistory,
-                                       loading, routeResult, photos, handlePhotoUpload,
-                                       isNavigating, setIsNavigating, handleFinishRoute, handleReturnVehicle,
-                                       currentLocation, routeWaypoints, routePath, reportForm, setReportForm,
-                                       handleReportDamage, handleSOS, carIcon, RouteBoundsController, NavigationController,
-                                       newRouteNotification, onOpenNotifications, handleStartAssignedRoute
+                                       routeResult, photos, handlePhotoUpload,
+                                       handleFinishRoute, handleReturnVehicle,
+                                       currentLocation, routeWaypoints, routePath,
+                                       handleSOS, carIcon, RouteBoundsController,
+                                       newRouteNotification, onOpenNotifications, handleStartAssignedRoute, handleOpenNavigation
                                    }) {
+    const [showReportDialog, setShowReportDialog] = useState(false);
     const assignedRoute = lastRoute?.status === 'ZLECONA' ? lastRoute : null;
 
     return (
@@ -40,12 +43,29 @@ export default function DriverView({
 
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Typography variant="h5" fontWeight="bold">Panel Kierowcy - Zlecenia i Trasy</Typography>
-                {tripStage === 'EN_ROUTE' && (
-                    <Button variant="contained" color="error" size="large" startIcon={<LocalHospitalIcon />} onClick={handleSOS} sx={{ animation: 'pulse 2s infinite' }}>
-                        SOS - WEZWIJ POMOC
-                    </Button>
-                )}
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {(tripStage === 'EN_ROUTE' || tripStage === 'RETURNING_TO_BASE') && (
+                        <Button variant="contained" color="warning" size="large" startIcon={<WarningIcon />} onClick={() => setShowReportDialog(true)}>
+                            Zgłoś problem
+                        </Button>
+                    )}
+                    {tripStage === 'EN_ROUTE' && (
+                        <Button variant="contained" color="error" size="large" startIcon={<LocalHospitalIcon />} onClick={handleSOS} sx={{ animation: 'pulse 2s infinite' }}>
+                            SOS - WEZWIJ POMOC
+                        </Button>
+                    )}
+                </Box>
             </Box>
+
+            {showReportDialog && (
+                <ReportDialog
+                    onClose={() => setShowReportDialog(false)}
+                    onSent={() => {
+                        setShowReportDialog(false);
+                        setMessage({ text: 'Zgłoszenie wysłane. Znajdziesz je w zakładce Zgłoszenia.', type: 'success' });
+                    }}
+                />
+            )}
 
             {tripStage === 'IDLE' && (
                 <Grid container spacing={3}>
@@ -63,6 +83,11 @@ export default function DriverView({
                                         <Typography variant="body2"><b>Pojazd:</b> {assignedRoute.vehicleRegistrationNumber || 'Przydzielony'}</Typography>
                                         <Typography variant="body2"><b>Dystans:</b> {assignedRoute.distanceKm ? assignedRoute.distanceKm.toFixed(2) : '?'} km</Typography>
                                         <Typography variant="body2"><b>Wymagana energia:</b> {assignedRoute.energyRequiredKWh ? assignedRoute.energyRequiredKWh.toFixed(1) : '?'} kWh</Typography>
+                                        {assignedRoute.chargingStops.map((stop, index) => (
+                                            <Typography key={`${stop.name}-${index}`} variant="body2">
+                                                <b>Postój {index + 1}:</b> {stop.name}, ładowanie ok. {Math.ceil(stop.chargingMinutes)} min
+                                            </Typography>
+                                        ))}
                                         <Button variant="contained" startIcon={<NavigationIcon />} onClick={() => handleStartAssignedRoute(assignedRoute)} sx={{ mt: 1 }}>
                                             Rozpocznij trasę
                                         </Button>
@@ -149,15 +174,8 @@ export default function DriverView({
                         )}
                         {tripStage === 'EN_ROUTE' && (
                             <>
-                                <Button
-                                    variant="contained"
-                                    color={isNavigating ? "secondary" : "info"}
-                                    size="large"
-                                    startIcon={<NavigationIcon />}
-                                    onClick={() => setIsNavigating(!isNavigating)}
-                                    sx={{ minWidth: 250 }}
-                                >
-                                    {isNavigating ? "Zatrzymaj Nawigację" : "Uruchom Nawigację (GPS)"}
+                                <Button variant="contained" color="success" size="large" startIcon={<MapIcon />} onClick={handleOpenNavigation} disabled={!routeWaypoints.start}>
+                                    Otwórz trasę w Google Maps
                                 </Button>
                                 <Button variant="contained" color="primary" size="large" onClick={handleFinishRoute}>
                                     Zgłoś dojazd do celu
@@ -166,6 +184,9 @@ export default function DriverView({
                         )}
                         {tripStage === 'RETURNING_TO_BASE' && (
                             <>
+                                <Button variant="contained" color="info" startIcon={<MapIcon />} onClick={handleOpenNavigation} disabled={!routeWaypoints.start}>
+                                    Nawiguj do bazy w Google Maps
+                                </Button>
                                 <Button component="label" variant="contained" color="warning" startIcon={<PhotoCameraIcon />}>
                                     Zdjęcie po zaparkowaniu (Baza)
                                     <input type="file" hidden accept="image/*" onChange={(e) => handlePhotoUpload(e, 'dropoff')} />
@@ -181,15 +202,19 @@ export default function DriverView({
                         <Box sx={{ height: 450, width: '100%', borderRadius: 2, overflow: 'hidden', border: '1px solid #ccc', position: 'relative' }}>
                             <MapContainer center={[routeWaypoints.start.lat, routeWaypoints.start.lng]} zoom={10} style={{ height: '100%', width: '100%' }}>
                                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                {!isNavigating && <RouteBoundsController waypoints={routeWaypoints} />}
-                                <NavigationController position={currentLocation} isNavigating={isNavigating} />
+                                <RouteBoundsController waypoints={routeWaypoints} />
 
                                 <Marker position={[routeWaypoints.start.lat, routeWaypoints.start.lng]}><Popup>Start</Popup></Marker>
                                 <Marker position={[routeWaypoints.end.lat, routeWaypoints.end.lng]}><Popup>Cel</Popup></Marker>
+                                {routeWaypoints.stops.map((stop, index) => (
+                                    <Marker key={`stop-${index}`} position={[stop.lat, stop.lng]}>
+                                        <Popup>Postój ładowania {index + 1}: {stop.name}</Popup>
+                                    </Marker>
+                                ))}
 
                                 {currentLocation && (
                                     <Marker position={[currentLocation.lat, currentLocation.lng]} icon={carIcon}>
-                                        <Popup>Twoja aktualna pozycja</Popup>
+                                        <Popup>Twoja pozycja (symulacja)</Popup>
                                     </Marker>
                                 )}
 
@@ -200,14 +225,6 @@ export default function DriverView({
                 </Paper>
             )}
 
-            {/* Formularz zgłaszania usterek */}
-            <Paper sx={{ p: 3, borderTop: '4px solid #d32f2f', mt: 2 }}>
-                <Typography variant="h6" color="error" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <WarningIcon /> Formularz Zgłoszeń i Usterek
-                </Typography>
-                <TextField fullWidth label="Szczegóły problemu na trasie" multiline rows={3} sx={{ mb: 2 }} value={reportForm.description} onChange={(e) => setReportForm({ ...reportForm, description: e.target.value })} />
-                <Button variant="contained" color="error" onClick={handleReportDamage} disabled={loading || !reportForm.description}>Wyślij zgłoszenie</Button>
-            </Paper>
         </Box>
     );
 }

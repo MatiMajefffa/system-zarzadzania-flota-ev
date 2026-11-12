@@ -27,7 +27,7 @@ export default function MapView({
 
             {message.text && <Alert severity={message.type}>{message.text}</Alert>}
 
-            <Paper sx={{ flexGrow: 1, minHeight: '500px', borderRadius: 2, overflow: 'hidden' }}>
+            <Paper sx={{ height: 'calc(100vh - 200px)', minHeight: '500px', borderRadius: 2, overflow: 'hidden' }}>
                 <MapContainer center={[centerCoords.lat, centerCoords.lng]} zoom={10} style={{ height: '100%', width: '100%' }}>
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     <MapController center={centerCoords} />

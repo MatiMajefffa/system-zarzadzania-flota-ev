@@ -4,6 +4,7 @@ import com.evfleet.systemzarzadzaniaflotaev.dto.RouteHistoryDto;
 import com.evfleet.systemzarzadzaniaflotaev.model.DriverNotification;
 import com.evfleet.systemzarzadzaniaflotaev.model.Report;
 import com.evfleet.systemzarzadzaniaflotaev.model.Role;
+import com.evfleet.systemzarzadzaniaflotaev.model.RouteChargingStop;
 import com.evfleet.systemzarzadzaniaflotaev.model.RouteEntity;
 import com.evfleet.systemzarzadzaniaflotaev.model.User;
 import com.evfleet.systemzarzadzaniaflotaev.model.Vehicle;
@@ -17,6 +18,7 @@ import com.evfleet.systemzarzadzaniaflotaev.repository.VehicleRepository;
 import com.evfleet.systemzarzadzaniaflotaev.security.SecurityUtils;
 import com.evfleet.systemzarzadzaniaflotaev.service.BatterySimulationService;
 import com.evfleet.systemzarzadzaniaflotaev.service.RoutePlanningService;
+import com.evfleet.systemzarzadzaniaflotaev.service.RouteTrackingService;
 import com.evfleet.systemzarzadzaniaflotaev.service.WeatherService;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +29,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
@@ -45,6 +46,7 @@ public class RouteController {
     private final UserRepository userRepository;
     private final ReportRepository reportRepository;
     private final WeatherService weatherService;
+    private final RouteTrackingService routeTrackingService;
     private final BatterySimulationService batterySimulationService;
 
     // Klasa DTO do żądania przypisania trasy kierowcy
@@ -64,9 +66,7 @@ public class RouteController {
         private Double startLng;
         private Double endLat;
         private Double endLng;
-        private Double chargingStopLat;
-        private Double chargingStopLng;
-        private String chargingStopName;
+        private List<RouteChargingStop> chargingStops;
     }
 
     // 1. Stary endpoint (po konkretnym ID pojazdu)
@@ -162,9 +162,9 @@ public class RouteController {
         route.setStartLng(request.getStartLng());
         route.setEndLat(request.getEndLat());
         route.setEndLng(request.getEndLng());
-        route.setChargingStopLat(request.getChargingStopLat());
-        route.setChargingStopLng(request.getChargingStopLng());
-        route.setChargingStopName(request.getChargingStopName());
+        if (request.getChargingStops() != null) {
+            route.setChargingStops(request.getChargingStops());
+        }
         route.setStatus(RouteEntity.STATUS_ASSIGNED);
 
         routeEntityRepository.save(route);
@@ -186,11 +186,35 @@ public class RouteController {
         return ResponseEntity.ok(routeEntityRepository.findByStatusInOrderByIdDesc(RouteEntity.ACTIVE_STATUSES));
     }
 
+    // Symulowane pozycje kierowców w trasie (panel menedżera)
+    @GetMapping("/positions")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<List<RouteTrackingService.SimulatedPosition>> getDriverPositions() {
+        LocalDateTime now = LocalDateTime.now();
+        return ResponseEntity.ok(routeEntityRepository.findByStatusInOrderByIdDesc(List.of(RouteEntity.STATUS_IN_PROGRESS)).stream()
+                .flatMap(route -> routeTrackingService.getPosition(route, now).stream())
+                .toList());
+    }
+
+    // Trasa i symulowana pozycja dla panelu kierowcy
+    @GetMapping("/{id}/tracking")
+    @PreAuthorize("hasRole('DRIVER')")
+    public ResponseEntity<RouteTrackingService.RouteTracking> getRouteTracking(@PathVariable Long id) {
+        return findOwnRoute(id)
+                .filter(route -> RouteEntity.STATUS_IN_PROGRESS.equals(route.getStatus()))
+                .flatMap(route -> routeTrackingService.getTracking(route, LocalDateTime.now()))
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    public record StartRouteRequest(Double latitude, Double longitude) {
+    }
+
     // Kierowca odebrał pojazd i rozpoczyna zleconą trasę
     @PostMapping("/{id}/start")
     @PreAuthorize("hasRole('DRIVER')")
     @Transactional
-    public ResponseEntity<?> startRoute(@PathVariable Long id) {
+    public ResponseEntity<?> startRoute(@PathVariable Long id, @RequestBody(required = false) StartRouteRequest request) {
         RouteEntity route = findOwnRoute(id).orElse(null);
         if (route == null) {
             return ResponseEntity.notFound().build();
@@ -206,6 +230,7 @@ public class RouteController {
         vehicle.setStatus(VehicleStatus.W_TRASIE);
         vehicleRepository.save(vehicle);
 
+        routeTrackingService.recordOutboundPath(route, request != null ? request.latitude() : null, request != null ? request.longitude() : null);
         route.setStatus(RouteEntity.STATUS_IN_PROGRESS);
         route.setStartedAt(LocalDateTime.now());
         notifyManagers(route, "Rozpoczęto trasę " + describeRoute(route));
@@ -226,11 +251,13 @@ public class RouteController {
         }
 
         double temperature = weatherService.getCurrentTemperature(route.getEndLat(), route.getEndLng());
+        double chargedKWh = route.getChargingStops().stream().mapToDouble(RouteChargingStop::getChargeKWh).sum();
         vehicleRepository.findByIdForUpdate(route.getVehicleId()).ifPresent(vehicle -> {
-            batterySimulationService.applyDrive(vehicle, route.getDistanceKm(), temperature, route.getChargingStopLat() != null);
+            batterySimulationService.applyDrive(vehicle, route.getDistanceKm(), temperature, chargedKWh);
             vehicleRepository.save(vehicle);
         });
 
+        routeTrackingService.recordReturnPath(route);
         route.setArrivedAt(LocalDateTime.now());
         notifyManagers(route, "Dotarcie do celu na trasie " + describeRoute(route));
         return ResponseEntity.ok(routeEntityRepository.save(route));
@@ -243,16 +270,9 @@ public class RouteController {
         String employeeId = String.valueOf(SecurityUtils.getCurrentUserId());
         List<RouteHistoryDto> history = routeEntityRepository
                 .findTop10ByEmployeeIdAndStatusOrderByIdDesc(employeeId, RouteEntity.STATUS_FINISHED).stream()
-                .map(route -> new RouteHistoryDto(route.getId(), route.getStartAddress(), route.getEndAddress(), getDurationMinutes(route)))
+                .map(route -> new RouteHistoryDto(route.getId(), route.getStartAddress(), route.getEndAddress(), route.getDrivingMinutes()))
                 .toList();
         return ResponseEntity.ok(history);
-    }
-
-    private static Long getDurationMinutes(RouteEntity route) {
-        if (route.getStartedAt() == null || route.getArrivedAt() == null) {
-            return null;
-        }
-        return Duration.between(route.getStartedAt(), route.getArrivedAt()).toMinutes();
     }
 
     // Kierowca zwrócił pojazd do bazy - zakończenie trasy zwalnia rezerwację
@@ -274,7 +294,7 @@ public class RouteController {
         // Powrót do bazy liczony jako ten sam dystans co trasa
         double temperature = weatherService.getCurrentTemperature(route.getStartLat(), route.getStartLng());
         vehicleRepository.findByIdForUpdate(route.getVehicleId()).ifPresent(vehicle -> {
-            batterySimulationService.applyDrive(vehicle, route.getDistanceKm(), temperature, false);
+            batterySimulationService.applyDrive(vehicle, route.getDistanceKm(), temperature, 0);
             if (StringUtils.hasText(route.getReturnBaseName())) {
                 vehicle.setCurrentBase(route.getReturnBaseName());
             }
@@ -301,7 +321,7 @@ public class RouteController {
         String driverName = driver.getFirstName() + " " + driver.getLastName() + " (ID: " + driver.getId() + ")";
         reportRepository.save(Report.builder()
                 .description(event + ". Kierowca: " + driverName)
-                .type("STATUS_TRASY")
+                .type(Report.TYPE_ROUTE_STATUS)
                 .employeeId(route.getEmployeeId())
                 .vehicleRegistration(route.getVehicleRegistrationNumber())
                 .build());

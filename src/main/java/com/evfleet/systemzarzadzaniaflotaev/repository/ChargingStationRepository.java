@@ -17,4 +17,10 @@ public interface ChargingStationRepository extends JpaRepository<ChargingStation
             @Param("longitude") Double longitude,
             @Param("radiusInMeters") Double radiusInMeters
     );
+
+    @Query(value = "SELECT * FROM charging_stations cs WHERE ST_DWithin(cs.location::geography, ST_GeogFromText(:lineWkt), :corridorMeters)", nativeQuery = true)
+    List<ChargingStation> findStationsAlongLine(
+            @Param("lineWkt") String lineWkt,
+            @Param("corridorMeters") Double corridorMeters
+    );
 }

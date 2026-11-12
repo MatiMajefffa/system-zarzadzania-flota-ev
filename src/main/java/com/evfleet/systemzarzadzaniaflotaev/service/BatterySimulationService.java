@@ -20,8 +20,8 @@ public class BatterySimulationService {
     public static final double DEFAULT_CHARGER_POWER_KW = 22.0;
     public static final double CHARGING_EFFICIENCY = 0.9;
     public static final int AUTO_CHARGE_THRESHOLD_PERCENT = 80;
-    // Stan baterii po trasie z postojem - kierowca doładowuje auto tak, aby dojechać do celu z rezerwą
-    public static final int RESERVE_AFTER_CHARGING_STOP_PERCENT = 10;
+    // Energia, której plan trasy nie pozwala zużyć w żadnym punkcie przejazdu
+    public static final int RESERVE_PERCENT = 10;
 
     private final VehicleRepository vehicleRepository;
 
@@ -56,15 +56,15 @@ public class BatterySimulationService {
         return getBaseConsumption(vehicle.getVehicleType()) * getTemperatureFactor(temperatureC);
     }
 
-    // Odejmuje energię za przejechany odcinek i dolicza przebieg
-    public void applyDrive(Vehicle vehicle, Double distanceKm, double temperatureC, boolean hadChargingStop) {
+    // Rozlicza przejechany odcinek: energia zużyta, energia z postojów ładowania i przebieg
+    public void applyDrive(Vehicle vehicle, Double distanceKm, double temperatureC, double chargedKWh) {
         if (distanceKm == null) {
             return;
         }
 
-        double usedPercent = distanceKm * getConsumption(vehicle, temperatureC) / vehicle.getBatteryCapacityKWh() * 100;
-        int minimumPercent = hadChargingStop ? RESERVE_AFTER_CHARGING_STOP_PERCENT : 0;
-        vehicle.setStateOfCharge((int) Math.round(Math.max(minimumPercent, vehicle.getStateOfCharge() - usedPercent)));
+        double usedKWh = distanceKm * getConsumption(vehicle, temperatureC);
+        double changePercent = (chargedKWh - usedKWh) / vehicle.getBatteryCapacityKWh() * 100;
+        vehicle.setStateOfCharge((int) Math.round(Math.clamp(vehicle.getStateOfCharge() + changePercent, 0.0, 100.0)));
 
         double mileage = vehicle.getTotalMileage() != null ? vehicle.getTotalMileage() : 0.0;
         vehicle.setTotalMileage(mileage + distanceKm);

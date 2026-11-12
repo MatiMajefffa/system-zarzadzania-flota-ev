@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem,
     Paper, Switch, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography
 } from '@mui/material';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import MailOutlineIcon from '@mui/icons-material/MailOutlined';
+import MapIcon from '@mui/icons-material/Map';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { getPhaseLabel, useDriverPositions } from './driverPositions';
 import RouteStatusChip from './RouteStatusChip';
 import RoutePlanDetails from './RoutePlanDetails';
 
@@ -14,6 +17,14 @@ const MAX_MESSAGE_LENGTH = 900;
 const formatTime = (value) => new Date(value).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
 
 const getDriverName = (driver) => (driver.firstName ? `${driver.firstName} ${driver.lastName}` : driver.email);
+
+function MapFocus({ target }) {
+    const map = useMap();
+    useEffect(() => {
+        if (target) map.flyTo([target.latitude, target.longitude], 13);
+    }, [target, map]);
+    return null;
+}
 
 function AssignRouteDialog({ driver, defaultBase, bases, routeResult, message, loading, onPlanRoute, onAssignRoute, onClose, onAssigned }) {
     const [startBase, setStartBase] = useState(defaultBase);
@@ -139,7 +150,11 @@ function SendMessageDialog({ driver, onClose, onSent }) {
     );
 }
 
-export default function DriversView({ drivers, bases, activeRoutes, message, loading, routeResult, onPlanRoute, onAssignRoute }) {
+export default function DriversView({ drivers, bases, activeRoutes, message, loading, routeResult, onPlanRoute, onAssignRoute, carIcon }) {
+    const positions = useDriverPositions();
+    const [mapTarget, setMapTarget] = useState(null);
+    const mapSectionRef = useRef(null);
+
     const [onlyActive, setOnlyActive] = useState(false);
     const [assignTarget, setAssignTarget] = useState(null);
     const [messageTarget, setMessageTarget] = useState(null);
@@ -147,6 +162,13 @@ export default function DriversView({ drivers, bases, activeRoutes, message, loa
 
     const routeByDriver = new Map(activeRoutes.map((route) => [String(route.employeeId), route]));
     const getRoute = (driver) => routeByDriver.get(String(driver.id));
+    const positionByRoute = new Map(positions.map((position) => [position.routeId, position]));
+    const getDriverForRoute = (routeId) => drivers.find((driver) => getRoute(driver)?.id === routeId);
+
+    const showOnMap = (position) => {
+        setMapTarget({ ...position });
+        mapSectionRef.current?.scrollIntoView({ behavior: 'smooth' });
+    };
     const getBase = (driver) => bases.find((base) => Number(base.id) === Number(driver.baseId));
     const getCity = (driver) => getBase(driver)?.name.replace(/^Baza\s+/i, '') ?? NO_BASE_LABEL;
 
@@ -185,6 +207,32 @@ export default function DriversView({ drivers, bases, activeRoutes, message, loa
                 />
             </Box>
 
+            <Paper ref={mapSectionRef} sx={{ p: 2 }}>
+                <Typography variant="h6">Pozycje kierowców w trasie</Typography>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Pozycja szacowana na podstawie zaplanowanej trasy i czasu przejazdu (symulacja).
+                    {positions.length === 0 && ' Żaden kierowca nie jest teraz w trasie.'}
+                </Typography>
+                <Box sx={{ height: 380, borderRadius: 1, overflow: 'hidden' }}>
+                    <MapContainer center={[50.27, 19.02]} zoom={9} style={{ height: '100%', width: '100%' }}>
+                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                        <MapFocus target={mapTarget} />
+                        {positions.map((position) => {
+                            const driver = getDriverForRoute(position.routeId);
+                            return (
+                                <Marker key={position.routeId} position={[position.latitude, position.longitude]} icon={carIcon}>
+                                    <Popup>
+                                        <strong>{driver ? getDriverName(driver) : `Trasa ${position.routeId}`}</strong><br />
+                                        {getPhaseLabel(position)}<br />
+                                        Postęp: {position.progressPercent}%
+                                    </Popup>
+                                </Marker>
+                            );
+                        })}
+                    </MapContainer>
+                </Box>
+            </Paper>
+
             {sortedGroups.length === 0 && (
                 <Typography color="text.secondary">
                     {onlyActive ? 'Żaden kierowca nie ma teraz aktywnego zlecenia.' : 'Brak zarejestrowanych kierowców w systemie.'}
@@ -211,17 +259,30 @@ export default function DriversView({ drivers, bases, activeRoutes, message, loa
                                     .sort((a, b) => getDriverName(a).localeCompare(getDriverName(b), 'pl', { numeric: true }))
                                     .map((driver) => {
                                         const route = getRoute(driver);
+                                        const position = route && positionByRoute.get(route.id);
                                         return (
                                             <TableRow key={driver.id}>
                                                 <TableCell>
                                                     {getDriverName(driver)}
                                                     <Typography variant="caption" color="text.secondary" display="block">ID: {driver.id}</Typography>
                                                 </TableCell>
-                                                <TableCell>{route ? <RouteStatusChip route={route} /> : <Chip size="small" variant="outlined" label="Wolny" />}</TableCell>
+                                                <TableCell>
+                                                    {route ? <RouteStatusChip route={route} /> : <Chip size="small" variant="outlined" label="Wolny" />}
+                                                    {position && (
+                                                        <Typography variant="caption" color="text.secondary" display="block">
+                                                            {getPhaseLabel(position)}, {position.progressPercent}%
+                                                        </Typography>
+                                                    )}
+                                                </TableCell>
                                                 <TableCell>{route?.vehicleRegistrationNumber ?? '—'}</TableCell>
                                                 <TableCell>{!route ? '—' : route.startedAt ? `Tak, ${formatTime(route.startedAt)}` : 'Jeszcze nie'}</TableCell>
                                                 <TableCell>{route ? `${route.startAddress} → ${route.endAddress}` : '—'}</TableCell>
                                                 <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                                                    {position && (
+                                                        <Button size="small" startIcon={<MapIcon />} onClick={() => showOnMap(position)} sx={{ mr: 1 }}>
+                                                            Pokaż na mapie
+                                                        </Button>
+                                                    )}
                                                     <Button size="small" startIcon={<MailOutlineIcon />} onClick={() => setMessageTarget(driver)} sx={{ mr: 1 }}>
                                                         Wiadomość
                                                     </Button>

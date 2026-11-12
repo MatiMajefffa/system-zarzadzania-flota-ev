@@ -1,9 +1,12 @@
 package com.evfleet.systemzarzadzaniaflotaev.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Entity
@@ -39,12 +42,27 @@ public class RouteEntity {
     private Double startLng;
     private Double endLat;
     private Double endLng;
-    private Double chargingStopLat;
-    private Double chargingStopLng;
-    private String chargingStopName;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "route_charging_stops", joinColumns = @JoinColumn(name = "route_id"))
+    @OrderColumn(name = "stop_order")
+    private List<RouteChargingStop> chargingStops = new ArrayList<>();
 
     private String status = STATUS_ASSIGNED;
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    // Przebieg trasy "dł,szer;dł,szer" i planowany czas jazdy, używane do symulacji pozycji
+    @JsonIgnore
+    @Column(columnDefinition = "text")
+    private String pathGeometry;
+    private Double plannedDurationSeconds;
+
     private LocalDateTime startedAt; // Odbiór pojazdu
     private LocalDateTime arrivedAt; // Dojazd do celu
+
+    // Czas jazdy od odbioru pojazdu do dojazdu; null dla tras bez zapisanych czasów
+    @JsonIgnore
+    public Long getDrivingMinutes() {
+        return startedAt == null || arrivedAt == null ? null : Duration.between(startedAt, arrivedAt).toMinutes();
+    }
 }

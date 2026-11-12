@@ -1,6 +1,7 @@
 package com.evfleet.systemzarzadzaniaflotaev.dto;
 
 import com.evfleet.systemzarzadzaniaflotaev.model.VehicleStatus;
+import com.evfleet.systemzarzadzaniaflotaev.model.VehicleType;
 import jakarta.validation.constraints.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -13,8 +14,17 @@ public class VehicleDto {
 
     private Long id;
     private Boolean isBlocked;
+
+    @NotNull(message = "Przebieg jest wymagany")
+    @PositiveOrZero(message = "Przebieg nie może być ujemny")
     private Double totalMileage;
+
+    @NotBlank(message = "Baza pojazdu jest wymagana")
     private String currentBase;
+
+    @NotNull(message = "Typ pojazdu jest wymagany")
+    private VehicleType vehicleType;
+
     private LocalDateTime chargingEndsAt;
 
     @NotBlank(message = "Numer rejestracyjny nie może być pusty")
